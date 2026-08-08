@@ -1,4 +1,5 @@
 from app.models.base import Base
+from app.models.blocked_period import BlockedPeriod
 from app.models.leave_balance import LeaveBalance
 from app.models.leave_request import LeaveRequest
 from app.models.leave_type import LeaveType
@@ -16,4 +17,5 @@ __all__ = [
     "LeaveRequest",
     "LeaveBalance",
     "RestrictionSettings",
+    "BlockedPeriod",
 ]

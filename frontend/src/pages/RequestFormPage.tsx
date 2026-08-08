@@ -1,34 +1,57 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { differenceInCalendarDays, format } from "date-fns";
 import { useState } from "react";
-import { createLeaveRequest } from "../api/leaveRequests";
+import type { DateRange } from "react-day-picker";
 import { ApiError } from "../api/client";
+import { getBlockedRanges, getRestrictionSettings } from "../api/calendar";
+import { createLeaveRequest } from "../api/leaveRequests";
+import { DateRangePicker } from "../components/DateRangePicker";
+
+function toIsoDate(d: Date): string {
+  return format(d, "yyyy-MM-dd");
+}
 
 export function RequestFormPage() {
   const queryClient = useQueryClient();
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [range, setRange] = useState<DateRange | undefined>();
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  const { data: blockedRanges } = useQuery({
+    queryKey: ["blocked-ranges"],
+    queryFn: getBlockedRanges,
+  });
+  const { data: restrictionSettings } = useQuery({
+    queryKey: ["restriction-settings"],
+    queryFn: getRestrictionSettings,
+  });
+
+  const minDaysSetting = restrictionSettings?.find((s) => s.key === "min_leave_duration");
+  const minDays =
+    minDaysSetting?.enabled && typeof minDaysSetting.params.min_days === "number"
+      ? minDaysSetting.params.min_days
+      : 1;
+
   const days =
-    dateFrom && dateTo
-      ? Math.floor(
-          (new Date(dateTo).getTime() - new Date(dateFrom).getTime()) / 86_400_000,
-        ) + 1
-      : null;
+    range?.from && range?.to ? differenceInCalendarDays(range.to, range.from) + 1 : null;
+  const canSubmit = days !== null && days >= minDays;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!range?.from || !range?.to) return;
     setError(null);
     setSuccess(false);
     setSubmitting(true);
     try {
-      await createLeaveRequest({ date_from: dateFrom, date_to: dateTo, comment });
+      await createLeaveRequest({
+        date_from: toIsoDate(range.from),
+        date_to: toIsoDate(range.to),
+        comment,
+      });
       setSuccess(true);
-      setDateFrom("");
-      setDateTo("");
+      setRange(undefined);
       setComment("");
       queryClient.invalidateQueries({ queryKey: ["my-leave-requests"] });
       queryClient.invalidateQueries({ queryKey: ["my-balance"] });
@@ -42,27 +65,12 @@ export function RequestFormPage() {
   return (
     <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <h3>Новая заявка на отпуск</h3>
-      <label>
-        Дата начала
-        <input
-          type="date"
-          value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)}
-          required
-          style={{ display: "block" }}
-        />
-      </label>
-      <label>
-        Дата окончания
-        <input
-          type="date"
-          value={dateTo}
-          onChange={(e) => setDateTo(e.target.value)}
-          required
-          style={{ display: "block" }}
-        />
-      </label>
-      {days !== null && <p>Длительность: {days} дн.</p>}
+      <DateRangePicker
+        range={range}
+        onChange={setRange}
+        blockedRanges={blockedRanges ?? []}
+        minDays={minDays}
+      />
       <label>
         Комментарий
         <textarea
@@ -71,7 +79,7 @@ export function RequestFormPage() {
           style={{ display: "block", width: "100%" }}
         />
       </label>
-      <button type="submit" disabled={submitting}>
+      <button type="submit" disabled={submitting || !canSubmit}>
         Отправить
       </button>
       {error && <p style={{ color: "crimson" }}>{error}</p>}

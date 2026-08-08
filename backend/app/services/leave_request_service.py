@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ForbiddenError, NotFoundError, ValidationFailedError
-from app.models.leave_request import CANCELLED, PENDING_APPROVAL, LeaveRequest
+from app.models.leave_request import APPROVED, CANCELLED, PENDING_APPROVAL, LeaveRequest
 from app.models.leave_type import LeaveType
 from app.models.user import User
 from app.services.validation import engine as validation_engine
@@ -51,6 +51,27 @@ def get_own(db: Session, user: User, request_id: uuid.UUID) -> LeaveRequest:
     if request is None or request.user_id != user.id:
         raise NotFoundError("Заявка не найдена")
     return request
+
+
+def list_team_approved(
+    db: Session, user: User, date_from: date, date_to: date
+) -> list[LeaveRequest]:
+    """Согласованные отпуска коллег по прямому отделу (для командного календаря)."""
+    if user.org_unit_id is None:
+        return []
+    return list(
+        db.scalars(
+            select(LeaveRequest)
+            .join(User, User.id == LeaveRequest.user_id)
+            .where(
+                User.org_unit_id == user.org_unit_id,
+                LeaveRequest.status == APPROVED,
+                LeaveRequest.date_from <= date_to,
+                LeaveRequest.date_to >= date_from,
+            )
+            .order_by(LeaveRequest.date_from)
+        ).all()
+    )
 
 
 def list_own(db: Session, user: User) -> list[LeaveRequest]:

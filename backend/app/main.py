@@ -3,7 +3,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.core.exceptions import register_exception_handlers
-from app.routers import auth_dev, leave_balances, leave_requests, org_units, users
+from app.routers import (
+    auth_dev,
+    blocked_periods,
+    calendar,
+    leave_balances,
+    leave_requests,
+    org_units,
+    restriction_settings,
+    users,
+)
 
 app = FastAPI(title="Планирование отпусков", version="0.1.0")
 
@@ -22,6 +31,9 @@ app.include_router(org_units.router)
 app.include_router(auth_dev.router)
 app.include_router(leave_requests.router)
 app.include_router(leave_balances.router)
+app.include_router(blocked_periods.router)
+app.include_router(calendar.router)
+app.include_router(restriction_settings.router)
 
 
 @app.get("/health")

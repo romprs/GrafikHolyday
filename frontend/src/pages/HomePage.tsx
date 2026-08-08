@@ -1,12 +1,20 @@
 import { useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { ApprovalQueuePage } from "./ApprovalQueuePage";
+import { BlockedPeriodsPage } from "./BlockedPeriodsPage";
 import { roleLabel } from "./DevLoginPage";
 import { MyRequestsPage } from "./MyRequestsPage";
 import { OrgUnitsPage } from "./OrgUnitsPage";
 import { RequestFormPage } from "./RequestFormPage";
+import { TeamCalendarPage } from "./TeamCalendarPage";
 
-type Tab = "my-requests" | "new-request" | "approvals" | "org-units";
+type Tab =
+  | "my-requests"
+  | "new-request"
+  | "approvals"
+  | "team-calendar"
+  | "blocked-periods"
+  | "org-units";
 
 export function HomePage() {
   const { currentUser, logout } = useAuth();
@@ -14,10 +22,14 @@ export function HomePage() {
 
   if (!currentUser) return null;
 
+  const isManagerOrHr = currentUser.role !== "employee";
+
   const tabs: { id: Tab; label: string; visible: boolean }[] = [
     { id: "my-requests", label: "Мои заявки", visible: true },
     { id: "new-request", label: "Новая заявка", visible: true },
-    { id: "approvals", label: "Согласование", visible: currentUser.role !== "employee" },
+    { id: "approvals", label: "Согласование", visible: isManagerOrHr },
+    { id: "team-calendar", label: "Календарь отдела", visible: true },
+    { id: "blocked-periods", label: "Недоступные периоды", visible: isManagerOrHr },
     { id: "org-units", label: "Оргструктура", visible: true },
   ];
 
@@ -30,7 +42,7 @@ export function HomePage() {
       </p>
       <button onClick={logout}>Выйти</button>
 
-      <nav style={{ display: "flex", gap: 8, margin: "16px 0", borderBottom: "1px solid #ccc" }}>
+      <nav style={{ display: "flex", gap: 8, margin: "16px 0", borderBottom: "1px solid #ccc", flexWrap: "wrap" }}>
         {tabs
           .filter((t) => t.visible)
           .map((t) => (
@@ -54,6 +66,8 @@ export function HomePage() {
       {tab === "my-requests" && <MyRequestsPage />}
       {tab === "new-request" && <RequestFormPage />}
       {tab === "approvals" && <ApprovalQueuePage />}
+      {tab === "team-calendar" && <TeamCalendarPage />}
+      {tab === "blocked-periods" && <BlockedPeriodsPage />}
       {tab === "org-units" && <OrgUnitsPage />}
     </div>
   );

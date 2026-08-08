@@ -49,3 +49,36 @@ export interface LeaveBalanceOut {
   used_days: number;
   remaining_days: number;
 }
+
+export type BlockedPeriodScope = "global" | "org_unit" | "user";
+
+export interface BlockedPeriodOut {
+  id: string;
+  date_from: string;
+  date_to: string;
+  reason: string;
+  scope: BlockedPeriodScope;
+  org_unit_id: string | null;
+  user_id: string | null;
+  is_active: boolean;
+  created_by: string;
+}
+
+export interface BlockedRangeOut {
+  date_from: string;
+  date_to: string;
+  reason: string;
+}
+
+export interface TeamLeaveOut {
+  user_id: string;
+  date_from: string;
+  date_to: string;
+}
+
+export interface RestrictionSettingsOut {
+  key: string;
+  enabled: boolean;
+  params: Record<string, unknown>;
+  description: string | null;
+}

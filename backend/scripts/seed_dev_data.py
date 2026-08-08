@@ -9,6 +9,7 @@ from datetime import date
 from sqlalchemy import select
 
 from app.database import SessionLocal
+from app.models.blocked_period import GLOBAL, BlockedPeriod
 from app.models.leave_balance import LeaveBalance
 from app.models.leave_type import LeaveType
 from app.models.org_unit import OrgUnit
@@ -105,6 +106,17 @@ def seed() -> None:
                         key=key, enabled=enabled, params=params, description=description
                     )
                 )
+
+        if db.scalar(select(BlockedPeriod).where(BlockedPeriod.reason == "Учебные сборы")) is None:
+            db.add(
+                BlockedPeriod(
+                    date_from=date(date.today().year, date.today().month, 20),
+                    date_to=date(date.today().year, date.today().month, 27),
+                    reason="Учебные сборы",
+                    scope=GLOBAL,
+                    created_by=hr.id,
+                )
+            )
 
         db.commit()
         print("Тестовые данные загружены:")
