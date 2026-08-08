@@ -14,6 +14,13 @@ class LeaveRequestReview(BaseModel):
     comment: str | None = None
 
 
+class LeaveRequestAdminOverride(BaseModel):
+    reason: str
+    date_from: date | None = None
+    date_to: date | None = None
+    status: str | None = None
+
+
 class LeaveRequestOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

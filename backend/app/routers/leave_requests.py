@@ -1,12 +1,21 @@
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-from app.dependencies import CurrentUser, DbSession
-from app.schemas.leave_request import LeaveRequestCreate, LeaveRequestOut, LeaveRequestReview
-from app.services import approval_service, leave_request_service
+from app.dependencies import CurrentUser, DbSession, require_role
+from app.models.user import User
+from app.schemas.leave_request import (
+    LeaveRequestAdminOverride,
+    LeaveRequestCreate,
+    LeaveRequestOut,
+    LeaveRequestReview,
+)
+from app.services import approval_service, leave_request_service, permissions
 
 router = APIRouter(prefix="/leave-requests", tags=["leave-requests"])
+
+HrAdmin = Annotated[User, Depends(require_role(permissions.HR_ADMIN))]
 
 
 @router.post("", response_model=LeaveRequestOut)
@@ -22,6 +31,11 @@ def create_leave_request(
 @router.get("/mine", response_model=list[LeaveRequestOut])
 def list_my_leave_requests(db: DbSession, user: CurrentUser) -> list[LeaveRequestOut]:
     return leave_request_service.list_own(db, user)
+
+
+@router.get("/all", response_model=list[LeaveRequestOut])
+def list_all_leave_requests(db: DbSession, _: HrAdmin) -> list[LeaveRequestOut]:
+    return approval_service.list_all(db)
 
 
 @router.post("/{request_id}/cancel", response_model=LeaveRequestOut)
@@ -48,3 +62,18 @@ def reject_leave_request(
     request_id: uuid.UUID, body: LeaveRequestReview, db: DbSession, user: CurrentUser
 ) -> LeaveRequestOut:
     return approval_service.reject(db, user, request_id, body.comment)
+
+
+@router.patch("/{request_id}/admin-override", response_model=LeaveRequestOut)
+def admin_override_leave_request(
+    request_id: uuid.UUID, body: LeaveRequestAdminOverride, db: DbSession, user: HrAdmin
+) -> LeaveRequestOut:
+    return approval_service.admin_override(
+        db,
+        user,
+        request_id,
+        body.reason,
+        date_from=body.date_from,
+        date_to=body.date_to,
+        status=body.status,
+    )

@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { useAuth } from "../auth/AuthContext";
+import { AllRequestsPage } from "./AllRequestsPage";
 import { ApprovalQueuePage } from "./ApprovalQueuePage";
+import { AuditLogPage } from "./AuditLogPage";
 import { BlockedPeriodsPage } from "./BlockedPeriodsPage";
 import { roleLabel } from "./DevLoginPage";
 import { MyRequestsPage } from "./MyRequestsPage";
 import { OrgLoadDashboardPage } from "./OrgLoadDashboardPage";
 import { OrgUnitsPage } from "./OrgUnitsPage";
 import { RequestFormPage } from "./RequestFormPage";
+import { RestrictionSettingsPage } from "./RestrictionSettingsPage";
 import { SyncPage } from "./SyncPage";
 import { TeamCalendarPage } from "./TeamCalendarPage";
 
@@ -18,7 +21,10 @@ type Tab =
   | "blocked-periods"
   | "org-units"
   | "org-load"
-  | "sync";
+  | "sync"
+  | "restriction-settings"
+  | "all-requests"
+  | "audit-log";
 
 export function HomePage() {
   const { currentUser, logout } = useAuth();
@@ -38,6 +44,9 @@ export function HomePage() {
     { id: "org-units", label: "Оргструктура", visible: true },
     { id: "org-load", label: "Загруженность отделов", visible: isManagerOrHr },
     { id: "sync", label: "Синхронизация", visible: isHrAdmin },
+    { id: "restriction-settings", label: "Ограничения", visible: isHrAdmin },
+    { id: "all-requests", label: "Все заявки", visible: isHrAdmin },
+    { id: "audit-log", label: "Журнал изменений", visible: isHrAdmin },
   ];
 
   return (
@@ -78,6 +87,9 @@ export function HomePage() {
       {tab === "org-units" && <OrgUnitsPage />}
       {tab === "org-load" && <OrgLoadDashboardPage />}
       {tab === "sync" && <SyncPage />}
+      {tab === "restriction-settings" && <RestrictionSettingsPage />}
+      {tab === "all-requests" && <AllRequestsPage />}
+      {tab === "audit-log" && <AuditLogPage />}
     </div>
   );
 }

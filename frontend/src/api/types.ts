@@ -114,3 +114,15 @@ export interface SyncRunOut {
   };
   error_message: string | null;
 }
+
+export interface AuditLogOut {
+  id: string;
+  entity_type: string;
+  entity_id: string;
+  action: string;
+  performed_by: string;
+  reason: string;
+  before_state: Record<string, unknown>;
+  after_state: Record<string, unknown>;
+  created_at: string;
+}

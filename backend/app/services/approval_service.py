@@ -1,13 +1,14 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
-from app.models.leave_request import APPROVED, PENDING_APPROVAL, REJECTED, LeaveRequest
+from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationFailedError
+from app.models.leave_request import APPROVED, PENDING_APPROVAL, REJECTED, STATUSES, LeaveRequest
 from app.models.org_unit import OrgUnit
 from app.models.user import User
+from app.services import audit_service
 
 
 def _is_direct_manager_of(db: Session, reviewer: User, target: User) -> bool:
@@ -86,3 +87,66 @@ def reject(
     db.commit()
     db.refresh(request)
     return request
+
+
+def admin_override(
+    db: Session,
+    actor: User,
+    request_id: uuid.UUID,
+    reason: str,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    status: str | None = None,
+) -> LeaveRequest:
+    """Единственный способ поправить уже согласованную/отклонённую заявку —
+    только HR/админ (проверяется на уровне роутера), обязательна причина,
+    каждая правка пишется в audit_log с полным до/после."""
+    if not reason or not reason.strip():
+        raise ValidationFailedError("Необходимо указать причину правки")
+
+    request = db.get(LeaveRequest, request_id)
+    if request is None:
+        raise NotFoundError("Заявка не найдена")
+
+    if status is not None and status not in STATUSES:
+        raise ValidationFailedError("Недопустимый статус", {"status": status})
+
+    before_state = {
+        "date_from": str(request.date_from),
+        "date_to": str(request.date_to),
+        "status": request.status,
+    }
+
+    new_date_from = date_from if date_from is not None else request.date_from
+    new_date_to = date_to if date_to is not None else request.date_to
+    if new_date_to < new_date_from:
+        raise ValidationFailedError("Дата окончания не может быть раньше даты начала")
+
+    request.date_from = new_date_from
+    request.date_to = new_date_to
+    if status is not None:
+        request.status = status
+
+    after_state = {
+        "date_from": str(request.date_from),
+        "date_to": str(request.date_to),
+        "status": request.status,
+    }
+
+    audit_service.log(
+        db,
+        "leave_request",
+        request.id,
+        "admin_override_edit",
+        actor,
+        reason,
+        before_state,
+        after_state,
+    )
+    db.commit()
+    db.refresh(request)
+    return request
+
+
+def list_all(db: Session) -> list[LeaveRequest]:
+    return list(db.scalars(select(LeaveRequest).order_by(LeaveRequest.submitted_at.desc())).all())

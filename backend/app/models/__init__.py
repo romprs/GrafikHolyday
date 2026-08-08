@@ -1,3 +1,4 @@
+from app.models.audit_log import AuditLog
 from app.models.base import Base
 from app.models.blocked_period import BlockedPeriod
 from app.models.external_id_mapping import ExternalIdMapping
@@ -23,4 +24,5 @@ __all__ = [
     "ExternalIdMapping",
     "SyncRun",
     "SyncChangeLog",
+    "AuditLog",
 ]
