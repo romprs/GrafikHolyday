@@ -19,3 +19,33 @@ export interface OrgUnitOut {
   head_user_id: string | null;
   is_active: boolean;
 }
+
+export type LeaveRequestStatus =
+  | "draft"
+  | "pending_approval"
+  | "approved"
+  | "rejected"
+  | "cancelled";
+
+export interface LeaveRequestOut {
+  id: string;
+  user_id: string;
+  date_from: string;
+  date_to: string;
+  comment: string | null;
+  status: LeaveRequestStatus;
+  reviewer_id: string | null;
+  review_comment: string | null;
+  submitted_at: string | null;
+  reviewed_at: string | null;
+  cancelled_at: string | null;
+  days: number;
+}
+
+export interface LeaveBalanceOut {
+  year: number;
+  accrued_days: number;
+  carried_over_days: number;
+  used_days: number;
+  remaining_days: number;
+}

@@ -27,7 +27,7 @@ class ForbiddenError(DomainError):
 class ValidationFailedError(DomainError):
     """Нарушено одно или несколько бизнес-правил (валидатор заявки и т.п.)."""
 
-    http_status = status.HTTP_422_UNPROCESSABLE_ENTITY
+    http_status = status.HTTP_422_UNPROCESSABLE_CONTENT
     code = "VALIDATION_FAILED"
 
 

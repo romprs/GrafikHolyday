@@ -4,11 +4,20 @@
 Запуск: .venv/bin/python -m scripts.seed_dev_data
 """
 
+from datetime import date
+
 from sqlalchemy import select
 
 from app.database import SessionLocal
+from app.models.leave_balance import LeaveBalance
 from app.models.leave_type import LeaveType
 from app.models.org_unit import OrgUnit
+from app.models.restriction_settings import (
+    BLOCKED_PERIOD_ENFORCEMENT,
+    DEPARTMENT_LOAD_THRESHOLDS,
+    MIN_LEAVE_DURATION,
+    RestrictionSettings,
+)
 from app.models.user import User
 from app.models.user_role import UserRole
 
@@ -64,6 +73,38 @@ def seed() -> None:
             db.add(UserRole(user_id=hr.id, role="hr_admin"))
 
         otdel.head_user_id = manager.id
+
+        current_year = date.today().year
+        for u in (manager, employee, employee_benefits):
+            if db.scalar(
+                select(LeaveBalance).where(
+                    LeaveBalance.user_id == u.id, LeaveBalance.year == current_year
+                )
+            ) is None:
+                db.add(LeaveBalance(user_id=u.id, year=current_year, accrued_days=28))
+
+        default_settings = (
+            (MIN_LEAVE_DURATION, True, {"min_days": 7}, "Минимальная длительность отпуска"),
+            (
+                BLOCKED_PERIOD_ENFORCEMENT,
+                True,
+                {},
+                "Запрет пересечения отпуска с недоступными периодами",
+            ),
+            (
+                DEPARTMENT_LOAD_THRESHOLDS,
+                True,
+                {"yellow": 0.30, "red": 0.50},
+                "Пороги подсветки загруженности отдела",
+            ),
+        )
+        for key, enabled, params, description in default_settings:
+            if db.get(RestrictionSettings, key) is None:
+                db.add(
+                    RestrictionSettings(
+                        key=key, enabled=enabled, params=params, description=description
+                    )
+                )
 
         db.commit()
         print("Тестовые данные загружены:")
