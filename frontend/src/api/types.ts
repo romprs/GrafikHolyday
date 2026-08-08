@@ -82,3 +82,35 @@ export interface RestrictionSettingsOut {
   params: Record<string, unknown>;
   description: string | null;
 }
+
+export type LoadBand = "green" | "yellow" | "red";
+
+export interface OrgLoadDayOut {
+  date: string;
+  on_leave: number;
+  headcount: number;
+  fraction: number;
+  band: LoadBand;
+}
+
+export interface OrgLoadOut {
+  org_unit_id: string;
+  headcount: number;
+  days: OrgLoadDayOut[];
+}
+
+export type SyncRunStatus = "running" | "success" | "failed" | "partial";
+
+export interface SyncRunOut {
+  id: string;
+  started_at: string;
+  finished_at: string | null;
+  trigger_type: "scheduled" | "manual";
+  triggered_by: string | null;
+  status: SyncRunStatus;
+  summary: {
+    org_units?: { created: number; updated: number; unchanged: number };
+    users?: { created: number; updated: number; unchanged: number };
+  };
+  error_message: string | null;
+}

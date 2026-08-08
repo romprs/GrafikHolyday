@@ -4,8 +4,10 @@ import { ApprovalQueuePage } from "./ApprovalQueuePage";
 import { BlockedPeriodsPage } from "./BlockedPeriodsPage";
 import { roleLabel } from "./DevLoginPage";
 import { MyRequestsPage } from "./MyRequestsPage";
+import { OrgLoadDashboardPage } from "./OrgLoadDashboardPage";
 import { OrgUnitsPage } from "./OrgUnitsPage";
 import { RequestFormPage } from "./RequestFormPage";
+import { SyncPage } from "./SyncPage";
 import { TeamCalendarPage } from "./TeamCalendarPage";
 
 type Tab =
@@ -14,7 +16,9 @@ type Tab =
   | "approvals"
   | "team-calendar"
   | "blocked-periods"
-  | "org-units";
+  | "org-units"
+  | "org-load"
+  | "sync";
 
 export function HomePage() {
   const { currentUser, logout } = useAuth();
@@ -23,6 +27,7 @@ export function HomePage() {
   if (!currentUser) return null;
 
   const isManagerOrHr = currentUser.role !== "employee";
+  const isHrAdmin = currentUser.role === "hr_admin";
 
   const tabs: { id: Tab; label: string; visible: boolean }[] = [
     { id: "my-requests", label: "Мои заявки", visible: true },
@@ -31,6 +36,8 @@ export function HomePage() {
     { id: "team-calendar", label: "Календарь отдела", visible: true },
     { id: "blocked-periods", label: "Недоступные периоды", visible: isManagerOrHr },
     { id: "org-units", label: "Оргструктура", visible: true },
+    { id: "org-load", label: "Загруженность отделов", visible: isManagerOrHr },
+    { id: "sync", label: "Синхронизация", visible: isHrAdmin },
   ];
 
   return (
@@ -69,6 +76,8 @@ export function HomePage() {
       {tab === "team-calendar" && <TeamCalendarPage />}
       {tab === "blocked-periods" && <BlockedPeriodsPage />}
       {tab === "org-units" && <OrgUnitsPage />}
+      {tab === "org-load" && <OrgLoadDashboardPage />}
+      {tab === "sync" && <SyncPage />}
     </div>
   );
 }

@@ -1,0 +1,105 @@
+{
+  "org_units": [
+    {
+      "external_id": "dir-u1",
+      "parent_external_id": null,
+      "name": "Управление разработки",
+      "unit_kind": "управление",
+      "head_external_id": null
+    },
+    {
+      "external_id": "dir-d1",
+      "parent_external_id": "dir-u1",
+      "name": "Отдел бэкенда",
+      "unit_kind": "отдел",
+      "head_external_id": "dir-u-1001"
+    },
+    {
+      "external_id": "dir-d2",
+      "parent_external_id": "dir-u1",
+      "name": "Отдел фронтенда",
+      "unit_kind": "отдел",
+      "head_external_id": "dir-u-1002"
+    },
+    {
+      "external_id": "dir-u2",
+      "parent_external_id": null,
+      "name": "Управление поддержки",
+      "unit_kind": "управление",
+      "head_external_id": null
+    },
+    {
+      "external_id": "dir-d3",
+      "parent_external_id": "dir-u2",
+      "name": "Отдел технической поддержки",
+      "unit_kind": "отдел",
+      "head_external_id": "dir-u-1003"
+    }
+  ],
+  "users": [
+    {
+      "external_id": "dir-u-1001",
+      "email": "backend.head@example.com",
+      "full_name": "Сергей Бэкендов",
+      "org_unit_external_id": "dir-d1",
+      "has_benefits": false,
+      "is_active": true
+    },
+    {
+      "external_id": "dir-u-1002",
+      "email": "frontend.head@example.com",
+      "full_name": "Ольга Фронтендова",
+      "org_unit_external_id": "dir-d2",
+      "has_benefits": false,
+      "is_active": true
+    },
+    {
+      "external_id": "dir-u-1003",
+      "email": "support.head@example.com",
+      "full_name": "Дмитрий Поддержкин",
+      "org_unit_external_id": "dir-d3",
+      "has_benefits": false,
+      "is_active": true
+    },
+    {
+      "external_id": "dir-u-2001",
+      "email": "backend.dev1@example.com",
+      "full_name": "Алексей Иванов",
+      "org_unit_external_id": "dir-d1",
+      "has_benefits": false,
+      "is_active": true
+    },
+    {
+      "external_id": "dir-u-2002",
+      "email": "backend.dev2@example.com",
+      "full_name": "Мария Петрова",
+      "org_unit_external_id": "dir-d1",
+      "has_benefits": true,
+      "is_active": true
+    },
+    {
+      "external_id": "dir-u-2003",
+      "email": "frontend.dev1@example.com",
+      "full_name": "Николай Сидоров",
+      "org_unit_external_id": "dir-d2",
+      "has_benefits": false,
+      "is_active": true
+    },
+    {
+      "external_id": "dir-u-2004",
+      "email": "support.agent1@example.com",
+      "full_name": "Елена Смирнова",
+      "org_unit_external_id": "dir-d3",
+      "has_benefits": false,
+      "is_active": true
+    },
+    {
+      "external_id": "dir-u-2005",
+      "email": "support.agent2@example.com",
+      "full_name": "Павел Кузнецов",
+      "org_unit_external_id": "dir-d3",
+      "has_benefits": false,
+      "is_active": true
+    }
+  ]
+}
