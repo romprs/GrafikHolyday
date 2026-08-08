@@ -1,0 +1,18 @@
+/* Показываем все месяцы года сеткой сразу — вместо пролистывания по одному,
+   чтобы длинный отпуск (например 48 дней), пересекающий несколько месяцев,
+   было удобно выбирать в один клик-драг без навигации вперёд/назад. */
+.year-grid-picker .rdp-months {
+  max-width: none;
+}
+
+.year-grid-picker .rdp-month {
+  flex: 0 0 260px;
+}
+
+.year-grid-picker .rdp-month_caption {
+  font-weight: 600;
+}
+
+.year-grid-picker table {
+  width: 100%;
+}

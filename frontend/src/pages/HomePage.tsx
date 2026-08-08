@@ -34,7 +34,7 @@ export function HomePage() {
   ];
 
   return (
-    <div style={{ maxWidth: 720, margin: "2rem auto", fontFamily: "sans-serif" }}>
+    <div style={{ maxWidth: 1200, margin: "2rem auto", fontFamily: "sans-serif", padding: "0 16px" }}>
       <h1>Планирование отпусков</h1>
       <p>
         Вы вошли как <strong>{currentUser.full_name}</strong> ({roleLabel(currentUser.role)})

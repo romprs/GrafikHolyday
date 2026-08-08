@@ -1,7 +1,8 @@
-import { differenceInCalendarDays, parseISO } from "date-fns";
+import { differenceInCalendarDays, parseISO, startOfMonth } from "date-fns";
 import { ru } from "date-fns/locale/ru";
 import { DayPicker, type DateRange, type Matcher } from "react-day-picker";
 import "react-day-picker/style.css";
+import "./DateRangePicker.css";
 import type { BlockedRangeOut } from "../api/types";
 
 interface Props {
@@ -30,15 +31,20 @@ export function DateRangePicker({ range, onChange, blockedRanges, minDays }: Pro
 
   return (
     <div>
-      <DayPicker
-        mode="range"
-        locale={ru}
-        selected={range}
-        onSelect={onChange}
-        disabled={disabled}
-        modifiers={{ blocked: toDateRangeMatchers(blockedRanges) }}
-        modifiersStyles={{ blocked: { textDecoration: "line-through", color: "#b00" } }}
-      />
+      <div className="year-grid-picker">
+        <DayPicker
+          mode="range"
+          locale={ru}
+          selected={range}
+          onSelect={onChange}
+          disabled={disabled}
+          numberOfMonths={12}
+          defaultMonth={startOfMonth(today)}
+          disableNavigation
+          modifiers={{ blocked: toDateRangeMatchers(blockedRanges) }}
+          modifiersStyles={{ blocked: { textDecoration: "line-through", color: "#b00" } }}
+        />
+      </div>
       {days !== null && (
         <p style={{ color: tooShort ? "crimson" : undefined }}>
           Длительность: {days} дн.
