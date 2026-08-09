@@ -1,8 +1,12 @@
 import { apiFetch } from "./client";
-import type { OrgLoadOut, SyncRunOut } from "./types";
+import type { OrgLoadDetailOut, OrgLoadOut, SyncRunOut } from "./types";
 
 export function getOrgLoad(orgUnitId: string): Promise<OrgLoadOut> {
   return apiFetch<OrgLoadOut>(`/org-load?org_unit_id=${orgUnitId}`);
+}
+
+export function getOrgLoadDetail(orgUnitId: string): Promise<OrgLoadDetailOut> {
+  return apiFetch<OrgLoadDetailOut>(`/org-load/detail?org_unit_id=${orgUnitId}`);
 }
 
 export function triggerSync(): Promise<SyncRunOut> {

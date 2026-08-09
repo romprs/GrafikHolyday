@@ -99,6 +99,26 @@ export interface OrgLoadOut {
   days: OrgLoadDayOut[];
 }
 
+export type EmployeeRole = "employee" | "manager" | "hr_admin";
+
+export interface OrgLoadEmployeeOut {
+  id: string;
+  full_name: string;
+  role: EmployeeRole;
+}
+
+export interface OrgLoadLeaveEntryOut {
+  user_id: string;
+  date_from: string;
+  date_to: string;
+}
+
+export interface OrgLoadDetailOut {
+  org_unit_id: string;
+  employees: OrgLoadEmployeeOut[];
+  leaves: OrgLoadLeaveEntryOut[];
+}
+
 export type SyncRunStatus = "running" | "success" | "failed" | "partial";
 
 export interface SyncRunOut {

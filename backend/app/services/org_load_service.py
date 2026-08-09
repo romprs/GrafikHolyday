@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.leave_request import APPROVED, LeaveRequest
 from app.models.restriction_settings import DEPARTMENT_LOAD_THRESHOLDS
 from app.models.user import User
-from app.services import org_unit_service, restriction_settings_service
+from app.services import org_unit_service, permissions, restriction_settings_service
 
 GREEN = "green"
 YELLOW = "yellow"
@@ -81,3 +81,46 @@ def get_org_load(db: Session, org_unit_id: uuid.UUID, date_from: date, date_to: 
         current += timedelta(days=1)
 
     return {"org_unit_id": org_unit_id, "headcount": headcount, "days": days}
+
+
+def get_org_leave_detail(
+    db: Session, org_unit_id: uuid.UUID, date_from: date, date_to: date
+) -> dict:
+    """Сотрудники юнита (с ролью) и их согласованные отпуска за период —
+    сырые данные для интерактивной таблицы (фильтры по роли, поиск, выбор
+    конкретных сотрудников, список отпускников по клику на день считаются
+    на фронте поверх одной этой выборки, без повторных запросов к API).
+    """
+    descendant_ids = org_unit_service.descendant_ids(db, org_unit_id)
+
+    users = list(
+        db.scalars(
+            select(User).where(User.org_unit_id.in_(descendant_ids), User.is_active)
+        ).all()
+    )
+    user_ids = {u.id for u in users}
+
+    requests = (
+        list(
+            db.scalars(
+                select(LeaveRequest).where(
+                    LeaveRequest.user_id.in_(user_ids),
+                    LeaveRequest.status == APPROVED,
+                    LeaveRequest.date_from <= date_to,
+                    LeaveRequest.date_to >= date_from,
+                )
+            ).all()
+        )
+        if user_ids
+        else []
+    )
+
+    employees = [
+        {"id": u.id, "full_name": u.full_name, "role": permissions.resolve_role(db, u)}
+        for u in users
+    ]
+    leaves = [
+        {"user_id": r.user_id, "date_from": r.date_from, "date_to": r.date_to} for r in requests
+    ]
+
+    return {"org_unit_id": org_unit_id, "employees": employees, "leaves": leaves}

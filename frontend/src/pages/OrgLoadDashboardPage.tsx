@@ -1,23 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { format, parseISO } from "date-fns";
+import { format } from "date-fns";
 import { ru } from "date-fns/locale/ru";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { apiFetch } from "../api/client";
-import { getOrgLoad } from "../api/orgLoad";
-import type { LoadBand, OrgLoadDayOut, OrgUnitOut } from "../api/types";
-
-function groupByMonth(days: OrgLoadDayOut[]): { label: string; days: OrgLoadDayOut[] }[] {
-  const groups = new Map<string, OrgLoadDayOut[]>();
-  for (const day of days) {
-    const monthKey = day.date.slice(0, 7);
-    if (!groups.has(monthKey)) groups.set(monthKey, []);
-    groups.get(monthKey)!.push(day);
-  }
-  return Array.from(groups.entries()).map(([monthKey, monthDays]) => ({
-    label: format(parseISO(`${monthKey}-01`), "LLLL yyyy", { locale: ru }),
-    days: monthDays,
-  }));
-}
+import { getRestrictionSettings } from "../api/calendar";
+import { getOrgLoadDetail } from "../api/orgLoad";
+import type { EmployeeRole, LoadBand, OrgLoadEmployeeOut, OrgUnitOut } from "../api/types";
 
 const bandColor: Record<LoadBand, string> = {
   green: "#4caf50",
@@ -31,86 +19,311 @@ const bandLabel: Record<LoadBand, string> = {
   red: "более 50%",
 };
 
+const roleFilterLabel: Record<"all" | EmployeeRole, string> = {
+  all: "Все",
+  manager: "Руководители",
+  employee: "Сотрудники",
+  hr_admin: "HR/админ",
+};
+
+function surname(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/);
+  return parts[parts.length - 1] ?? fullName;
+}
+
+function band(fraction: number, yellow: number, red: number): LoadBand {
+  if (fraction > red) return "red";
+  if (fraction > yellow) return "yellow";
+  return "green";
+}
+
+const MONTH_NAMES = Array.from({ length: 12 }, (_, i) =>
+  format(new Date(2000, i, 1), "LLLL", { locale: ru }),
+);
+
+function daysInMonth(year: number, monthIndex: number): number {
+  return new Date(year, monthIndex + 1, 0).getDate();
+}
+
+function toIso(year: number, monthIndex: number, day: number): string {
+  return format(new Date(year, monthIndex, day), "yyyy-MM-dd");
+}
+
 export function OrgLoadDashboardPage() {
   const { data: orgUnits } = useQuery({
     queryKey: ["org-units"],
     queryFn: () => apiFetch<OrgUnitOut[]>("/org-units"),
   });
+  const { data: restrictionSettings } = useQuery({
+    queryKey: ["restriction-settings"],
+    queryFn: getRestrictionSettings,
+  });
   const [selectedUnitId, setSelectedUnitId] = useState<string>("");
-
   const unitId = selectedUnitId || orgUnits?.[0]?.id || "";
 
-  const { data: load } = useQuery({
-    queryKey: ["org-load", unitId],
-    queryFn: () => getOrgLoad(unitId),
+  const { data: detail } = useQuery({
+    queryKey: ["org-load-detail", unitId],
+    queryFn: () => getOrgLoadDetail(unitId),
     enabled: !!unitId,
   });
 
+  const [roleFilter, setRoleFilter] = useState<"all" | EmployeeRole>("all");
+  const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [clickedDay, setClickedDay] = useState<string | null>(null);
+
+  const thresholdsSetting = restrictionSettings?.find((s) => s.key === "department_load_thresholds");
+  const yellowThreshold =
+    typeof thresholdsSetting?.params.yellow === "number" ? thresholdsSetting.params.yellow : 0.3;
+  const redThreshold =
+    typeof thresholdsSetting?.params.red === "number" ? thresholdsSetting.params.red : 0.5;
+
+  const planningYearSetting = restrictionSettings?.find((s) => s.key === "planning_year");
+  const year =
+    typeof planningYearSetting?.params.year === "number"
+      ? planningYearSetting.params.year
+      : new Date().getFullYear();
+
+  const employees = detail?.employees ?? [];
+  const leaves = detail?.leaves ?? [];
+
+  const roleFilteredEmployees = useMemo(
+    () => employees.filter((e) => roleFilter === "all" || e.role === roleFilter),
+    [employees, roleFilter],
+  );
+
+  const searchFilteredEmployees = useMemo(() => {
+    if (!search.trim()) return roleFilteredEmployees;
+    const query = search.trim().toLowerCase();
+    return roleFilteredEmployees.filter((e) => surname(e.full_name).toLowerCase().startsWith(query));
+  }, [roleFilteredEmployees, search]);
+
+  // Если сотрудники выбраны вручную — анализируем только их (для пересечений),
+  // иначе — всех, кто прошёл фильтр по роли.
+  const inScopeEmployees: OrgLoadEmployeeOut[] =
+    selectedIds.size > 0
+      ? roleFilteredEmployees.filter((e) => selectedIds.has(e.id))
+      : roleFilteredEmployees;
+  const inScopeIds = useMemo(() => new Set(inScopeEmployees.map((e) => e.id)), [inScopeEmployees]);
+
+  const leavesInScope = useMemo(
+    () => leaves.filter((l) => inScopeIds.has(l.user_id)),
+    [leaves, inScopeIds],
+  );
+
+  const employeesById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
+
+  function employeesOnLeave(dateIso: string): OrgLoadEmployeeOut[] {
+    return leavesInScope
+      .filter((l) => l.date_from <= dateIso && l.date_to >= dateIso)
+      .map((l) => employeesById.get(l.user_id))
+      .filter((e): e is OrgLoadEmployeeOut => !!e);
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const clickedDayEmployees = clickedDay ? employeesOnLeave(clickedDay) : [];
+
   return (
     <div>
-      <h3>Загруженность отдела</h3>
-      <label>
-        Подразделение:{" "}
-        <select value={unitId} onChange={(e) => setSelectedUnitId(e.target.value)}>
-          {orgUnits?.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.name} ({u.unit_kind})
-            </option>
-          ))}
-        </select>
-      </label>
+      <h3>Загруженность отдела ({year} год)</h3>
+      <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "flex-start" }}>
+        <div>
+          <label>
+            Подразделение:{" "}
+            <select value={unitId} onChange={(e) => setSelectedUnitId(e.target.value)}>
+              {orgUnits?.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name} ({u.unit_kind})
+                </option>
+              ))}
+            </select>
+          </label>
+          {" · "}
+          <label>
+            Роль:{" "}
+            <select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value as "all" | EmployeeRole)}
+            >
+              {(["all", "manager", "employee"] as const).map((r) => (
+                <option key={r} value={r}>
+                  {roleFilterLabel[r]}
+                </option>
+              ))}
+            </select>
+          </label>
+          {" · "}
+          <label>
+            Поиск по фамилии:{" "}
+            <input
+              type="text"
+              placeholder="напр. Ива"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{ width: 120 }}
+            />
+          </label>
 
-      {load && (
-        <>
-          <p>
-            Списочная численность (без льготников): <strong>{load.headcount}</strong>
-          </p>
-          {groupByMonth(load.days).map((month) => (
-            <div key={month.label} style={{ marginTop: 12 }}>
-              <div style={{ fontWeight: 600, marginBottom: 4, textTransform: "capitalize" }}>
-                {month.label}
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
-                {month.days.map((day) => (
-                  <div
-                    key={day.date}
-                    title={`${day.date}: ${day.on_leave} из ${day.headcount} в отпуске (${Math.round(day.fraction * 100)}%)`}
-                    style={{
-                      width: 28,
-                      height: 32,
-                      background: bandColor[day.band],
-                      color: "white",
-                      fontSize: 10,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      borderRadius: 3,
-                    }}
-                  >
-                    <span>{format(parseISO(day.date), "d", { locale: ru })}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-          <div style={{ display: "flex", gap: 16, marginTop: 12, fontSize: "0.85em" }}>
-            {(["green", "yellow", "red"] as LoadBand[]).map((band) => (
-              <span key={band} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <span
-                  style={{
-                    display: "inline-block",
-                    width: 12,
-                    height: 12,
-                    background: bandColor[band],
-                    borderRadius: 2,
-                  }}
-                />
-                {bandLabel[band]}
-              </span>
+          <div
+            style={{
+              marginTop: 8,
+              maxHeight: 160,
+              overflowY: "auto",
+              border: "1px solid #ddd",
+              padding: 8,
+              width: 320,
+            }}
+          >
+            {searchFilteredEmployees.length === 0 && (
+              <p style={{ color: "#888", margin: 0 }}>Никого не найдено.</p>
+            )}
+            {searchFilteredEmployees.map((e) => (
+              <label key={e.id} style={{ display: "block" }}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(e.id)}
+                  onChange={() => toggleSelected(e.id)}
+                />{" "}
+                {e.full_name}
+              </label>
             ))}
           </div>
-        </>
-      )}
+          {selectedIds.size > 0 && (
+            <p style={{ fontSize: "0.85em", color: "#888" }}>
+              Выбрано вручную: {selectedIds.size} — анализируются пересечения только между ними.{" "}
+              <button onClick={() => setSelectedIds(new Set())}>Сбросить выбор</button>
+            </p>
+          )}
+        </div>
+
+        {clickedDay && (
+          <div style={{ border: "1px solid #ccc", padding: 12, minWidth: 220 }}>
+            <strong>{clickedDay}</strong>
+            <ul style={{ margin: "4px 0 0 0", paddingLeft: 20 }}>
+              {clickedDayEmployees.map((e) => (
+                <li key={e.id}>{e.full_name}</li>
+              ))}
+              {clickedDayEmployees.length === 0 && <li>Никто не в отпуске</li>}
+            </ul>
+            <button onClick={() => setClickedDay(null)}>Закрыть</button>
+          </div>
+        )}
+      </div>
+
+      <p style={{ marginTop: 12 }}>
+        В анализе: <strong>{inScopeEmployees.length}</strong> чел.
+      </p>
+
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", fontSize: 11 }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left", padding: "2px 8px 2px 0", whiteSpace: "nowrap" }}>
+                Месяц
+              </th>
+              {Array.from({ length: 31 }, (_, i) => (
+                <th key={i} style={{ width: 22, fontWeight: 400 }}>
+                  {i + 1}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {MONTH_NAMES.map((monthName, monthIndex) => {
+              const numDays = daysInMonth(year, monthIndex);
+              return (
+                <tr key={monthName}>
+                  <td
+                    style={{
+                      textAlign: "left",
+                      padding: "2px 8px 2px 0",
+                      whiteSpace: "nowrap",
+                      textTransform: "capitalize",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {monthName}
+                  </td>
+                  {Array.from({ length: 31 }, (_, i) => {
+                    const day = i + 1;
+                    if (day > numDays) return <td key={day} />;
+                    const dateIso = toIso(year, monthIndex, day);
+                    const onLeave = employeesOnLeave(dateIso);
+                    const fraction = inScopeEmployees.length
+                      ? onLeave.length / inScopeEmployees.length
+                      : 0;
+                    const empty = onLeave.length === 0;
+                    return (
+                      <td key={day} style={{ padding: 1 }}>
+                        <button
+                          onClick={() => setClickedDay(dateIso)}
+                          disabled={empty}
+                          title={
+                            empty
+                              ? undefined
+                              : `${dateIso}: ${onLeave.length} в отпуске — ${onLeave.map((e) => e.full_name).join(", ")}`
+                          }
+                          style={{
+                            width: 20,
+                            height: 20,
+                            border: "none",
+                            borderRadius: 2,
+                            cursor: empty ? "default" : "pointer",
+                            background: empty
+                              ? "#f0f0f0"
+                              : bandColor[band(fraction, yellowThreshold, redThreshold)],
+                            color: empty ? "#bbb" : "white",
+                            fontSize: 9,
+                          }}
+                        >
+                          {empty ? "" : onLeave.length}
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ display: "flex", gap: 16, marginTop: 12, fontSize: "0.85em" }}>
+        {(["green", "yellow", "red"] as LoadBand[]).map((b) => (
+          <span key={b} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <span
+              style={{
+                display: "inline-block",
+                width: 12,
+                height: 12,
+                background: bandColor[b],
+                borderRadius: 2,
+              }}
+            />
+            {bandLabel[b]}
+          </span>
+        ))}
+        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span
+            style={{
+              display: "inline-block",
+              width: 12,
+              height: 12,
+              background: "#f0f0f0",
+              borderRadius: 2,
+            }}
+          />
+          нет отпусков (клик недоступен)
+        </span>
+      </div>
     </div>
   );
 }
