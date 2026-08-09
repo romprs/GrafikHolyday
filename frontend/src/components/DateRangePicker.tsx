@@ -15,6 +15,9 @@ interface Props {
   /** Плановый год — пикер показывает январь–декабрь именно этого года,
    * а не 12 месяцев вперёд от сегодня (см. настройку "Плановый год"). */
   year: number;
+  /** День под курсором — для предпросмотра диапазона до второго клика (см. onHoverDayChange). */
+  hoverDay?: Date;
+  onHoverDayChange?: (day: Date | undefined) => void;
 }
 
 function toDateRangeMatchers(ranges: BlockedRangeOut[]): Matcher[] {
@@ -24,7 +27,15 @@ function toDateRangeMatchers(ranges: BlockedRangeOut[]): Matcher[] {
   }));
 }
 
-export function DateRangePicker({ range, onChange, blockedRanges, plannedRanges, year }: Props) {
+export function DateRangePicker({
+  range,
+  onChange,
+  blockedRanges,
+  plannedRanges,
+  year,
+  hoverDay,
+  onHoverDayChange,
+}: Props) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const yearStart = new Date(year, 0, 1);
@@ -35,6 +46,22 @@ export function DateRangePicker({ range, onChange, blockedRanges, plannedRanges,
     ...toDateRangeMatchers(blockedRanges),
     ...toDateRangeMatchers(planned),
   ];
+
+  // Предпросмотр диапазона при наведении. Библиотека завершает диапазон уже
+  // на первом клике (from === to, однодневный диапазон) — считаем выбор
+  // "ещё не завершённым пользователем", пока наведённый день отличается от
+  // единственного выбранного, и показываем, что получится при втором клике.
+  const isStillPicking =
+    range?.from && range?.to && range.from.getTime() === range.to.getTime();
+  const previewRange: Matcher[] =
+    isStillPicking && hoverDay && hoverDay.getTime() !== range!.from!.getTime()
+      ? [
+          {
+            from: range!.from! < hoverDay ? range!.from! : hoverDay,
+            to: range!.from! < hoverDay ? hoverDay : range!.from!,
+          },
+        ]
+      : [];
 
   return (
     <div>
@@ -48,13 +75,17 @@ export function DateRangePicker({ range, onChange, blockedRanges, plannedRanges,
           numberOfMonths={12}
           defaultMonth={yearStart}
           disableNavigation
+          onDayMouseEnter={(day) => onHoverDayChange?.(day)}
+          onDayMouseLeave={() => onHoverDayChange?.(undefined)}
           modifiers={{
             blocked: toDateRangeMatchers(blockedRanges),
             planned: toDateRangeMatchers(planned),
+            preview: previewRange,
           }}
           modifiersStyles={{
             blocked: { textDecoration: "line-through", color: "#b00" },
             planned: { backgroundColor: "#cfe8ff", color: "#0a4a8f", fontWeight: 600 },
+            preview: { backgroundColor: "#e8eef7", color: "#333", boxShadow: "inset 0 0 0 1px #99b" },
           }}
         />
       </div>

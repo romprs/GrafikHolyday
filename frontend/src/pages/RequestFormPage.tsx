@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { differenceInCalendarDays, format } from "date-fns";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DateRange } from "react-day-picker";
 import { ApiError } from "../api/client";
 import { getBlockedRanges, getRestrictionSettings } from "../api/calendar";
@@ -14,12 +14,13 @@ function toIsoDate(d: Date): string {
 export function RequestFormPage() {
   const queryClient = useQueryClient();
   const [range, setRange] = useState<DateRange | undefined>();
-  const [comment, setComment] = useState("");
+  const [hoverDay, setHoverDay] = useState<Date | undefined>();
   const [bonusRequested, setBonusRequested] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [adding, setAdding] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const lastAutoAddedKey = useRef<string | null>(null);
 
   const { data: blockedRanges } = useQuery({
     queryKey: ["blocked-ranges"],
@@ -56,9 +57,23 @@ export function RequestFormPage() {
     typeof bonusSetting?.params.min_days === "number" ? bonusSetting.params.min_days : 14;
   const bonusProgramEnabled = bonusSetting?.enabled ?? false;
 
-  const currentRangeDays =
-    range?.from && range?.to ? differenceInCalendarDays(range.to, range.from) + 1 : null;
-  const canAddPeriod = currentRangeDays !== null && currentRangeDays >= minDays;
+  // react-day-picker завершает диапазон уже на первом клике (from === to) —
+  // пока наведённый день отличается от него, считаем выбор "ещё не
+  // завершённым" и показываем предпросмотр по наведению мыши, не дожидаясь
+  // второго клика.
+  const isStillPicking = !!(range?.from && range?.to && range.from.getTime() === range.to.getTime());
+  const isPreview = isStillPicking && !!hoverDay && hoverDay.getTime() !== range!.from!.getTime();
+  const previewDays = isPreview
+    ? differenceInCalendarDays(
+        range!.from! < hoverDay! ? hoverDay! : range!.from!,
+        range!.from! < hoverDay! ? range!.from! : hoverDay!,
+      ) + 1
+    : null;
+  const currentRangeDays = isPreview
+    ? previewDays
+    : range?.from && range?.to
+      ? differenceInCalendarDays(range.to, range.from) + 1
+      : null;
   const qualifiesForBonus = currentRangeDays !== null && currentRangeDays > bonusMinDays;
 
   const plannedTotalDays = (drafts ?? []).reduce((sum, p) => sum + p.days, 0);
@@ -75,20 +90,18 @@ export function RequestFormPage() {
 
   function clearSelection() {
     setRange(undefined);
-    setComment("");
+    setHoverDay(undefined);
     setBonusRequested(false);
   }
 
-  async function handleAddPeriod() {
-    if (!range?.from || !range?.to || currentRangeDays === null) return;
+  async function handleAddPeriod(from: Date, to: Date) {
     setError(null);
     setSuccess(false);
     setAdding(true);
     try {
       await addDraft({
-        date_from: toIsoDate(range.from),
-        date_to: toIsoDate(range.to),
-        comment: comment || undefined,
+        date_from: toIsoDate(from),
+        date_to: toIsoDate(to),
         bonus_requested: bonusRequested && qualifiesForBonus,
       });
       clearSelection();
@@ -99,6 +112,20 @@ export function RequestFormPage() {
       setAdding(false);
     }
   }
+
+  // Период формируется прямо кликом мыши на календаре — как только выбор
+  // завершён (заданы обе даты) и длительность проходит минимальный порог,
+  // период добавляется в план автоматически, без отдельной кнопки.
+  useEffect(() => {
+    if (!range?.from || !range?.to) return;
+    const key = `${range.from.getTime()}-${range.to.getTime()}`;
+    if (lastAutoAddedKey.current === key) return;
+    const days = differenceInCalendarDays(range.to, range.from) + 1;
+    if (days < minDays) return;
+    lastAutoAddedKey.current = key;
+    void handleAddPeriod(range.from, range.to);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [range?.from, range?.to, minDays]);
 
   async function handleRemovePeriod(id: string) {
     setError(null);
@@ -156,6 +183,8 @@ export function RequestFormPage() {
             blockedRanges={blockedRanges ?? []}
             plannedRanges={plannedRanges}
             year={planningYear}
+            hoverDay={hoverDay}
+            onHoverDayChange={setHoverDay}
           />
         </div>
 
@@ -175,23 +204,18 @@ export function RequestFormPage() {
           <div>
             {currentRangeDays !== null ? (
               <p style={{ margin: 0, color: tooShort ? "crimson" : undefined }}>
-                Длительность: <strong>{currentRangeDays} дн.</strong>
+                {isPreview ? "Выбирается: " : "Длительность: "}
+                <strong>{currentRangeDays} дн.</strong>
                 {tooShort && ` — минимум ${minDays} дн.`}
+                {isPreview && !tooShort && " (кликните ещё раз, чтобы завершить выбор)"}
               </p>
             ) : (
-              <p style={{ margin: 0, color: "#888" }}>Выберите период на календаре слева.</p>
+              <p style={{ margin: 0, color: "#888" }}>
+                Выберите период на календаре: клик — начало, клик — конец. Период добавится в
+                план автоматически.
+              </p>
             )}
           </div>
-
-          <label>
-            Комментарий к периоду
-            <textarea
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              style={{ display: "block", width: "100%" }}
-              rows={3}
-            />
-          </label>
 
           {bonusProgramEnabled && (
             <label
@@ -213,54 +237,54 @@ export function RequestFormPage() {
             </label>
           )}
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button type="button" onClick={handleAddPeriod} disabled={!canAddPeriod || adding}>
-              Добавить период в план
-            </button>
-            <button type="button" onClick={clearSelection} disabled={!range?.from && !comment}>
+          <div>
+            <button type="button" onClick={clearSelection} disabled={!range?.from || adding}>
               Очистить выбор
             </button>
           </div>
+
+          {draftsLoading && <p>Загрузка плана…</p>}
+
+          {drafts && drafts.length > 0 && (
+            <div>
+              <h4 style={{ marginBottom: 4 }}>План отпуска на {planningYear} год</h4>
+              <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "0.9em" }}>
+                <tbody>
+                  {drafts.map((d) => (
+                    <tr key={d.id}>
+                      <td>
+                        {d.date_from} — {d.date_to} ({d.days} дн.)
+                        {d.bonus_requested && " 🎁"}
+                      </td>
+                      <td>
+                        <button type="button" onClick={() => handleRemovePeriod(d.id)}>
+                          Убрать
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!readyToSubmit && (
+                <p style={{ color: "#888", fontSize: "0.85em" }}>
+                  Отправить на согласование можно, только когда выбран весь доступный остаток —
+                  осталось выбрать ещё {remainingAfterPlanned} дн.
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={handleSubmitAll}
+                disabled={submitting || !readyToSubmit}
+              >
+                Отправить план на согласование
+              </button>
+            </div>
+          )}
+
+          {error && <p style={{ color: "crimson" }}>{error}</p>}
+          {success && <p style={{ color: "green" }}>Заявка отправлена на согласование.</p>}
         </div>
       </div>
-
-      {draftsLoading && <p>Загрузка плана…</p>}
-
-      {drafts && drafts.length > 0 && (
-        <div>
-          <h4>План отпуска на {planningYear} год</h4>
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <tbody>
-              {drafts.map((d) => (
-                <tr key={d.id}>
-                  <td>
-                    {d.date_from} — {d.date_to} ({d.days} дн.)
-                    {d.bonus_requested && " 🎁 доплата"}
-                  </td>
-                  <td>{d.comment}</td>
-                  <td>
-                    <button type="button" onClick={() => handleRemovePeriod(d.id)}>
-                      Убрать
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {!readyToSubmit && (
-            <p style={{ color: "#888" }}>
-              Отправить на согласование можно, только когда выбран весь доступный остаток —
-              осталось выбрать ещё {remainingAfterPlanned} дн.
-            </p>
-          )}
-          <button type="button" onClick={handleSubmitAll} disabled={submitting || !readyToSubmit}>
-            Отправить план на согласование
-          </button>
-        </div>
-      )}
-
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
-      {success && <p style={{ color: "green" }}>Заявка отправлена на согласование.</p>}
     </div>
   );
 }
