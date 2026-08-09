@@ -1,23 +1,28 @@
 import { apiFetch } from "./client";
 import type { LeaveBalanceOut, LeaveRequestOut } from "./types";
 
-export function createLeaveRequest(input: {
+export function listDrafts(year?: number): Promise<LeaveRequestOut[]> {
+  return apiFetch<LeaveRequestOut[]>(`/leave-requests/drafts${year ? `?year=${year}` : ""}`);
+}
+
+export function addDraft(input: {
   date_from: string;
   date_to: string;
   comment?: string;
 }): Promise<LeaveRequestOut> {
-  return apiFetch<LeaveRequestOut>("/leave-requests", {
+  return apiFetch<LeaveRequestOut>("/leave-requests/drafts", {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
-export function createLeaveRequestsBulk(
-  periods: { date_from: string; date_to: string; comment?: string }[],
-): Promise<LeaveRequestOut[]> {
-  return apiFetch<LeaveRequestOut[]>("/leave-requests/bulk", {
+export function removeDraft(id: string): Promise<void> {
+  return apiFetch<void>(`/leave-requests/drafts/${id}`, { method: "DELETE" });
+}
+
+export function submitDrafts(year?: number): Promise<LeaveRequestOut[]> {
+  return apiFetch<LeaveRequestOut[]>(`/leave-requests/submit${year ? `?year=${year}` : ""}`, {
     method: "POST",
-    body: JSON.stringify({ periods }),
   });
 }
 

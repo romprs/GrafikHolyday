@@ -3,7 +3,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.leave_request import APPROVED, PENDING_APPROVAL, LeaveRequest
+from app.models.leave_request import APPROVED, DRAFT, PENDING_APPROVAL, LeaveRequest
 from app.models.restriction_settings import OWN_OVERLAP_CHECK, RestrictionSettings
 from app.models.user import User
 from app.services.validation.types import Violation
@@ -24,7 +24,7 @@ def check(
     overlapping = db.scalars(
         select(LeaveRequest).where(
             LeaveRequest.user_id == user.id,
-            LeaveRequest.status.in_((APPROVED, PENDING_APPROVAL)),
+            LeaveRequest.status.in_((APPROVED, PENDING_APPROVAL, DRAFT)),
             LeaveRequest.date_from <= date_to,
             LeaveRequest.date_to >= date_from,
         )

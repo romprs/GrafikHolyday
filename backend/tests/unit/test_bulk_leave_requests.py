@@ -4,6 +4,7 @@ import pytest
 
 from app.core.exceptions import ValidationFailedError
 from app.models.leave_balance import LeaveBalance
+from app.models.leave_request import PENDING_APPROVAL
 from app.models.leave_type import LeaveType
 from app.models.restriction_settings import (
     LEAVE_BALANCE_LIMIT,
@@ -30,60 +31,74 @@ def setup(db_session):
     return {"user": user}
 
 
-def test_creates_multiple_non_overlapping_periods(db_session, setup):
-    created = leave_request_service.create_and_submit_bulk(
-        db_session,
-        setup["user"],
-        [
-            (date(2026, 6, 1), date(2026, 6, 7), None),
-            (date(2026, 9, 1), date(2026, 9, 7), None),
-        ],
+def test_adds_multiple_non_overlapping_drafts(db_session, setup):
+    leave_request_service.create_draft(
+        db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 7), None
     )
-    assert len(created) == 2
+    leave_request_service.create_draft(
+        db_session, setup["user"], date(2026, 9, 1), date(2026, 9, 7), None
+    )
+    drafts = leave_request_service.list_drafts(db_session, setup["user"], 2026)
+    assert len(drafts) == 2
 
 
 def test_rejects_periods_overlapping_each_other(db_session, setup):
+    leave_request_service.create_draft(
+        db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 10), None
+    )
     with pytest.raises(ValidationFailedError):
-        leave_request_service.create_and_submit_bulk(
-            db_session,
-            setup["user"],
-            [
-                (date(2026, 6, 1), date(2026, 6, 10), None),
-                (date(2026, 6, 8), date(2026, 6, 15), None),
-            ],
+        leave_request_service.create_draft(
+            db_session, setup["user"], date(2026, 6, 8), date(2026, 6, 15), None
         )
 
 
-def test_rejects_when_total_exceeds_balance(db_session, setup):
-    # 14 + 7 = 21 > 20 доступных
+def test_rejects_draft_exceeding_remaining_balance(db_session, setup):
+    # Баланс 20: первый черновик — 14 дней (остаток 6), второй на 7 дней уже не помещается.
+    leave_request_service.create_draft(
+        db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 14), None
+    )
     with pytest.raises(ValidationFailedError):
-        leave_request_service.create_and_submit_bulk(
-            db_session,
-            setup["user"],
-            [
-                (date(2026, 6, 1), date(2026, 6, 14), None),
-                (date(2026, 9, 1), date(2026, 9, 7), None),
-            ],
+        leave_request_service.create_draft(
+            db_session, setup["user"], date(2026, 9, 1), date(2026, 9, 7), None
         )
 
 
-def test_atomic_nothing_created_on_failure(db_session, setup):
+def test_failed_draft_does_not_affect_existing_drafts(db_session, setup):
+    leave_request_service.create_draft(
+        db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 7), None
+    )
     with pytest.raises(ValidationFailedError):
-        leave_request_service.create_and_submit_bulk(
-            db_session,
-            setup["user"],
-            [
-                (date(2026, 6, 1), date(2026, 6, 7), None),
-                (date(2026, 6, 3), date(2026, 6, 9), None),
-            ],
+        leave_request_service.create_draft(
+            db_session, setup["user"], date(2026, 6, 3), date(2026, 6, 9), None
         )
-    assert leave_request_service.list_own(db_session, setup["user"]) == []
+    drafts = leave_request_service.list_drafts(db_session, setup["user"], 2026)
+    assert len(drafts) == 1
 
 
-def test_rejects_short_period_in_batch(db_session, setup):
+def test_rejects_short_draft(db_session, setup):
     with pytest.raises(ValidationFailedError):
-        leave_request_service.create_and_submit_bulk(
-            db_session,
-            setup["user"],
-            [(date(2026, 6, 1), date(2026, 6, 3), None)],
+        leave_request_service.create_draft(
+            db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 3), None
         )
+
+
+def test_submit_rejects_partial_selection(db_session, setup):
+    # Баланс 20, выбрано только 7 — отправлять нельзя, пока не выбран весь остаток.
+    leave_request_service.create_draft(
+        db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 7), None
+    )
+    with pytest.raises(ValidationFailedError):
+        leave_request_service.submit_drafts(db_session, setup["user"], 2026)
+
+
+def test_submit_succeeds_on_exact_balance_match(db_session, setup):
+    leave_request_service.create_draft(
+        db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 13), None
+    )
+    leave_request_service.create_draft(
+        db_session, setup["user"], date(2026, 9, 1), date(2026, 9, 7), None
+    )
+    submitted = leave_request_service.submit_drafts(db_session, setup["user"], 2026)
+    assert len(submitted) == 2
+    assert all(r.status == PENDING_APPROVAL for r in submitted)
+    assert leave_request_service.list_drafts(db_session, setup["user"], 2026) == []

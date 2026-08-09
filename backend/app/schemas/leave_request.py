@@ -10,10 +10,6 @@ class LeaveRequestCreate(BaseModel):
     comment: str | None = None
 
 
-class LeaveRequestBulkCreate(BaseModel):
-    periods: list[LeaveRequestCreate]
-
-
 class LeaveRequestReview(BaseModel):
     comment: str | None = None
 

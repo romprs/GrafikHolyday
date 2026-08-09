@@ -1,6 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { getBlockedRanges, getTeamCalendar } from "../api/calendar";
 
+const statusLabel: Record<string, string> = {
+  pending_approval: "на согласовании",
+  approved: "согласовано",
+};
+
+const statusColor: Record<string, string> = {
+  pending_approval: "#fbc02d",
+  approved: "#4caf50",
+};
+
 export function TeamCalendarPage() {
   const { data: teamLeave } = useQuery({
     queryKey: ["team-calendar"],
@@ -15,12 +25,26 @@ export function TeamCalendarPage() {
     <div>
       <h3>Календарь отдела</h3>
 
-      <h4>Согласованные отпуска коллег</h4>
-      {teamLeave?.length === 0 && <p>Нет согласованных отпусков в ближайшие 90 дней.</p>}
+      <h4>Отпуска коллег (согласованные и на согласовании)</h4>
+      <p style={{ color: "#888" }}>
+        Заявки на согласовании тоже показаны — чтобы оценить пересечение с ними до принятия
+        решения.
+      </p>
+      {teamLeave?.length === 0 && <p>Нет отпусков в ближайшие 90 дней.</p>}
       <ul>
         {teamLeave?.map((t, i) => (
           <li key={i}>
-            {t.date_from} — {t.date_to}
+            <span
+              style={{
+                display: "inline-block",
+                width: 10,
+                height: 10,
+                borderRadius: "50%",
+                background: statusColor[t.status] ?? "#999",
+                marginRight: 6,
+              }}
+            />
+            {t.date_from} — {t.date_to} ({statusLabel[t.status] ?? t.status})
           </li>
         ))}
       </ul>

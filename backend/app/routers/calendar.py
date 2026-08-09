@@ -29,8 +29,8 @@ def get_team_calendar(
     date_from: date = date.today(),
     date_to: date = date.today() + timedelta(days=90),
 ) -> list[TeamLeaveOut]:
-    requests = leave_request_service.list_team_approved(db, user, date_from, date_to)
+    requests = leave_request_service.list_team_leave(db, user, date_from, date_to)
     return [
-        TeamLeaveOut(user_id=r.user_id, date_from=r.date_from, date_to=r.date_to)
+        TeamLeaveOut(user_id=r.user_id, date_from=r.date_from, date_to=r.date_to, status=r.status)
         for r in requests
     ]

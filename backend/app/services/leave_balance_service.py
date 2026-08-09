@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.leave_balance import LeaveBalance
-from app.models.leave_request import APPROVED, PENDING_APPROVAL, LeaveRequest
+from app.models.leave_request import APPROVED, DRAFT, PENDING_APPROVAL, LeaveRequest
 from app.models.user import User
 
 
@@ -50,9 +50,10 @@ def get_summary(db: Session, user: User, year: int) -> dict:
 def get_remaining_for_new_request(
     db: Session, user: User, year: int, exclude_request_ids: set[uuid.UUID] | None = None
 ) -> float:
-    """Остаток с учётом уже поданных (pending_approval), а не только
-    согласованных заявок — чтобы нельзя было "закредитовать" баланс несколькими
-    ещё не рассмотренными заявками сверх доступного."""
+    """Остаток с учётом уже поданных (pending_approval) и ещё не отправленных
+    черновиков (draft), а не только согласованных заявок — чтобы нельзя было
+    "закредитовать" баланс несколькими ещё не рассмотренными или даже не
+    отправленными периодами сверх доступного."""
     balance = db.scalar(
         select(LeaveBalance).where(LeaveBalance.user_id == user.id, LeaveBalance.year == year)
     )
@@ -64,7 +65,7 @@ def get_remaining_for_new_request(
     reserved_requests = db.scalars(
         select(LeaveRequest).where(
             LeaveRequest.user_id == user.id,
-            LeaveRequest.status.in_((APPROVED, PENDING_APPROVAL)),
+            LeaveRequest.status.in_((APPROVED, PENDING_APPROVAL, DRAFT)),
             LeaveRequest.date_from <= year_end,
             LeaveRequest.date_to >= year_start,
         )

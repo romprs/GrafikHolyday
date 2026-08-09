@@ -14,3 +14,4 @@ class TeamLeaveOut(BaseModel):
     user_id: uuid.UUID
     date_from: date
     date_to: date
+    status: str

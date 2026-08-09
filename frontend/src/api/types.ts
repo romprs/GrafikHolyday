@@ -74,6 +74,7 @@ export interface TeamLeaveOut {
   user_id: string;
   date_from: string;
   date_to: string;
+  status: LeaveRequestStatus;
 }
 
 export interface RestrictionSettingsOut {

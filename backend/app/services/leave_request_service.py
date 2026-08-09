@@ -5,12 +5,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ForbiddenError, NotFoundError, ValidationFailedError
-from app.models.leave_request import APPROVED, CANCELLED, PENDING_APPROVAL, LeaveRequest
+from app.models.leave_request import (
+    APPROVED,
+    CANCELLED,
+    DRAFT,
+    PENDING_APPROVAL,
+    LeaveRequest,
+)
 from app.models.leave_type import LeaveType
 from app.models.user import User
 from app.services import leave_balance_service
 from app.services.validation import engine as validation_engine
-from app.services.validation.types import Violation
 
 
 def _get_vacation_leave_type(db: Session) -> LeaveType:
@@ -20,9 +25,20 @@ def _get_vacation_leave_type(db: Session) -> LeaveType:
     return leave_type
 
 
-def create_and_submit(
+def create_draft(
     db: Session, user: User, date_from: date, date_to: date, comment: str | None
 ) -> LeaveRequest:
+    """Добавляет период в текущий план отпуска (черновик — переживает
+    переключение вкладок/перезагрузку страницы, в отличие от состояния формы).
+
+    Проходит те же правила, что и обычная заявка (мин. длительность,
+    блокировки, остаток баланса с учётом уже добавленных черновиков,
+    пересечение с другими своими периодами, включая черновики) — поэтому
+    нельзя добавить период, который в сумме с уже добавленными превысит
+    остаток: get_remaining_for_new_request и own_overlap_rule учитывают
+    статус draft наравне с pending/approved (см. модель LeaveRequest.STATUSES
+    и services/validation/*_rule.py).
+    """
     violations = validation_engine.validate_leave_request(db, user, date_from, date_to)
     if violations:
         first = violations[0]
@@ -32,15 +48,13 @@ def create_and_submit(
         )
 
     leave_type = _get_vacation_leave_type(db)
-    now = datetime.now(timezone.utc)
     request = LeaveRequest(
         user_id=user.id,
         leave_type_id=leave_type.id,
         date_from=date_from,
         date_to=date_to,
         comment=comment,
-        status=PENDING_APPROVAL,
-        submitted_at=now,
+        status=DRAFT,
     )
     db.add(request)
     db.commit()
@@ -48,76 +62,68 @@ def create_and_submit(
     return request
 
 
-def create_and_submit_bulk(
-    db: Session, user: User, periods: list[tuple[date, date, str | None]]
-) -> list[LeaveRequest]:
-    """Несколько периодов одной пачкой — атомарно (либо все, либо ни одного).
-
-    own_overlap_rule в движке проверяет только против уже сохранённых заявок
-    (эти периоды ещё не в БД), поэтому пересечения периодов друг с другом
-    внутри пачки и суммарный остаток по годам проверяются здесь отдельно.
-    """
-    if not periods:
-        raise ValidationFailedError("Не указано ни одного периода")
-
-    sorted_periods = sorted(periods, key=lambda p: p[0])
-    for prev, curr in zip(sorted_periods, sorted_periods[1:]):
-        if curr[0] <= prev[1]:
-            raise ValidationFailedError(
-                "Периоды в заявке пересекаются друг с другом",
-                {
-                    "period_a": {"date_from": str(prev[0]), "date_to": str(prev[1])},
-                    "period_b": {"date_from": str(curr[0]), "date_to": str(curr[1])},
-                },
+def list_drafts(db: Session, user: User, year: int) -> list[LeaveRequest]:
+    year_start = date(year, 1, 1)
+    year_end = date(year, 12, 31)
+    return list(
+        db.scalars(
+            select(LeaveRequest)
+            .where(
+                LeaveRequest.user_id == user.id,
+                LeaveRequest.status == DRAFT,
+                LeaveRequest.date_from <= year_end,
+                LeaveRequest.date_to >= year_start,
             )
+            .order_by(LeaveRequest.date_from)
+        ).all()
+    )
 
-    all_violations: list[Violation] = []
-    for date_from, date_to, _ in periods:
-        all_violations.extend(validation_engine.validate_leave_request(db, user, date_from, date_to))
+
+def delete_draft(db: Session, user: User, request_id: uuid.UUID) -> None:
+    request = get_own(db, user, request_id)
+    if request.status != DRAFT:
+        raise ForbiddenError(
+            "Убрать можно только ещё не отправленный период", {"current_status": request.status}
+        )
+    db.delete(request)
+    db.commit()
+
+
+def submit_drafts(db: Session, user: User, year: int) -> list[LeaveRequest]:
+    """Отправляет на согласование весь текущий план на год разом.
+
+    Заявка обязана полностью выбирать доступный остаток — частичная отправка
+    запрещена, это и есть контроль "один человек — одна заявка в год": после
+    полной отправки остаток становится равен 0, и добавить (тем более
+    отправить) что-то ещё в этом году уже нельзя, пока часть периодов не
+    отменят/отклонят и остаток не освободится.
+    """
+    drafts = list_drafts(db, user, year)
+    if not drafts:
+        raise ValidationFailedError("Нет добавленных периодов для отправки")
+
+    draft_ids = {d.id for d in drafts}
+    total_days = sum((d.date_to - d.date_from).days + 1 for d in drafts)
 
     if not user.has_benefits:
-        days_by_year: dict[int, int] = {}
-        for date_from, date_to, _ in periods:
-            days_by_year[date_from.year] = (
-                days_by_year.get(date_from.year, 0) + (date_to - date_from).days + 1
+        available = leave_balance_service.get_remaining_for_new_request(
+            db, user, year, exclude_request_ids=draft_ids
+        )
+        if total_days != available:
+            raise ValidationFailedError(
+                f"Заявка должна использовать весь доступный остаток: выбрано {total_days} дн., "
+                f"доступно {available} дн. Добавьте ещё периоды или уберите лишние.",
+                {"selected_days": total_days, "available_days": available},
             )
-        for year, total_days in days_by_year.items():
-            remaining = leave_balance_service.get_remaining_for_new_request(db, user, year)
-            if total_days > remaining:
-                all_violations.append(
-                    Violation(
-                        code="LEAVE_BALANCE_EXCEEDED",
-                        message_ru=f"Суммарно запрошено {total_days} дн. за {year} год, "
-                        f"доступно {remaining} дн.",
-                        params={"year": year, "requested_days": total_days, "remaining_days": remaining},
-                    )
-                )
 
-    if all_violations:
-        first = all_violations[0]
-        raise ValidationFailedError(
-            first.message_ru, {"violations": [v.__dict__ for v in all_violations]}
-        )
-
-    leave_type = _get_vacation_leave_type(db)
     now = datetime.now(timezone.utc)
-    created = []
-    for date_from, date_to, comment in periods:
-        request = LeaveRequest(
-            user_id=user.id,
-            leave_type_id=leave_type.id,
-            date_from=date_from,
-            date_to=date_to,
-            comment=comment,
-            status=PENDING_APPROVAL,
-            submitted_at=now,
-        )
-        db.add(request)
-        created.append(request)
+    for draft in drafts:
+        draft.status = PENDING_APPROVAL
+        draft.submitted_at = now
     db.commit()
-    for request in created:
-        db.refresh(request)
-    return created
+    for draft in drafts:
+        db.refresh(draft)
+    return drafts
 
 
 def get_own(db: Session, user: User, request_id: uuid.UUID) -> LeaveRequest:
@@ -127,10 +133,11 @@ def get_own(db: Session, user: User, request_id: uuid.UUID) -> LeaveRequest:
     return request
 
 
-def list_team_approved(
-    db: Session, user: User, date_from: date, date_to: date
-) -> list[LeaveRequest]:
-    """Согласованные отпуска коллег по прямому отделу (для командного календаря)."""
+def list_team_leave(db: Session, user: User, date_from: date, date_to: date) -> list[LeaveRequest]:
+    """Отпуска коллег по прямому отделу — и согласованные, и на согласовании
+    (черновики и отклонённые/отменённые не показываем — это не реальные
+    претенденты на пересечение). Руководителю нужно видеть pending, чтобы
+    оценить пересечения перед решением об согласовании."""
     if user.org_unit_id is None:
         return []
     return list(
@@ -139,7 +146,7 @@ def list_team_approved(
             .join(User, User.id == LeaveRequest.user_id)
             .where(
                 User.org_unit_id == user.org_unit_id,
-                LeaveRequest.status == APPROVED,
+                LeaveRequest.status.in_((APPROVED, PENDING_APPROVAL)),
                 LeaveRequest.date_from <= date_to,
                 LeaveRequest.date_to >= date_from,
             )
@@ -152,7 +159,7 @@ def list_own(db: Session, user: User) -> list[LeaveRequest]:
     return list(
         db.scalars(
             select(LeaveRequest)
-            .where(LeaveRequest.user_id == user.id)
+            .where(LeaveRequest.user_id == user.id, LeaveRequest.status != DRAFT)
             .order_by(LeaveRequest.date_from.desc())
         ).all()
     )
@@ -160,7 +167,7 @@ def list_own(db: Session, user: User) -> list[LeaveRequest]:
 
 def cancel(db: Session, user: User, request_id: uuid.UUID) -> LeaveRequest:
     request = get_own(db, user, request_id)
-    if request.status not in (PENDING_APPROVAL, "approved"):
+    if request.status not in (PENDING_APPROVAL, APPROVED):
         raise ForbiddenError(
             "Отменить можно только заявку в статусе 'на согласовании' или 'согласована'",
             {"current_status": request.status},

@@ -7,34 +7,39 @@ from app.dependencies import CurrentUser, DbSession, require_role
 from app.models.user import User
 from app.schemas.leave_request import (
     LeaveRequestAdminOverride,
-    LeaveRequestBulkCreate,
     LeaveRequestCreate,
     LeaveRequestOut,
     LeaveRequestReview,
 )
-from app.services import approval_service, leave_request_service, permissions
+from app.services import approval_service, leave_request_service, permissions, restriction_settings_service
 
 router = APIRouter(prefix="/leave-requests", tags=["leave-requests"])
 
 HrAdmin = Annotated[User, Depends(require_role(permissions.HR_ADMIN))]
 
 
-@router.post("", response_model=LeaveRequestOut)
-def create_leave_request(
-    body: LeaveRequestCreate, db: DbSession, user: CurrentUser
-) -> LeaveRequestOut:
-    request = leave_request_service.create_and_submit(
-        db, user, body.date_from, body.date_to, body.comment
-    )
-    return request
+def _resolved_year(db: DbSession, year: int | None) -> int:
+    return year if year is not None else restriction_settings_service.get_planning_year(db)
 
 
-@router.post("/bulk", response_model=list[LeaveRequestOut])
-def create_leave_requests_bulk(
-    body: LeaveRequestBulkCreate, db: DbSession, user: CurrentUser
-) -> list[LeaveRequestOut]:
-    periods = [(p.date_from, p.date_to, p.comment) for p in body.periods]
-    return leave_request_service.create_and_submit_bulk(db, user, periods)
+@router.get("/drafts", response_model=list[LeaveRequestOut])
+def list_drafts(db: DbSession, user: CurrentUser, year: int | None = None) -> list[LeaveRequestOut]:
+    return leave_request_service.list_drafts(db, user, _resolved_year(db, year))
+
+
+@router.post("/drafts", response_model=LeaveRequestOut)
+def add_draft(body: LeaveRequestCreate, db: DbSession, user: CurrentUser) -> LeaveRequestOut:
+    return leave_request_service.create_draft(db, user, body.date_from, body.date_to, body.comment)
+
+
+@router.delete("/drafts/{request_id}", status_code=204)
+def remove_draft(request_id: uuid.UUID, db: DbSession, user: CurrentUser) -> None:
+    leave_request_service.delete_draft(db, user, request_id)
+
+
+@router.post("/submit", response_model=list[LeaveRequestOut])
+def submit_drafts(db: DbSession, user: CurrentUser, year: int | None = None) -> list[LeaveRequestOut]:
+    return leave_request_service.submit_drafts(db, user, _resolved_year(db, year))
 
 
 @router.get("/mine", response_model=list[LeaveRequestOut])
