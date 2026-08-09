@@ -12,6 +12,15 @@ export function createLeaveRequest(input: {
   });
 }
 
+export function createLeaveRequestsBulk(
+  periods: { date_from: string; date_to: string; comment?: string }[],
+): Promise<LeaveRequestOut[]> {
+  return apiFetch<LeaveRequestOut[]>("/leave-requests/bulk", {
+    method: "POST",
+    body: JSON.stringify({ periods }),
+  });
+}
+
 export function listMyLeaveRequests(): Promise<LeaveRequestOut[]> {
   return apiFetch<LeaveRequestOut[]>("/leave-requests/mine");
 }

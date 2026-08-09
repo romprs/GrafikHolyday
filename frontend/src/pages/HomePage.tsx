@@ -5,11 +5,13 @@ import { ApprovalQueuePage } from "./ApprovalQueuePage";
 import { AuditLogPage } from "./AuditLogPage";
 import { BlockedPeriodsPage } from "./BlockedPeriodsPage";
 import { roleLabel } from "./DevLoginPage";
+import { EmployeesPage } from "./EmployeesPage";
 import { MyRequestsPage } from "./MyRequestsPage";
 import { OrgLoadDashboardPage } from "./OrgLoadDashboardPage";
 import { OrgUnitsPage } from "./OrgUnitsPage";
 import { RequestFormPage } from "./RequestFormPage";
 import { RestrictionSettingsPage } from "./RestrictionSettingsPage";
+import { RolesPage } from "./RolesPage";
 import { SyncPage } from "./SyncPage";
 import { TeamCalendarPage } from "./TeamCalendarPage";
 
@@ -24,7 +26,9 @@ type Tab =
   | "sync"
   | "restriction-settings"
   | "all-requests"
-  | "audit-log";
+  | "audit-log"
+  | "employees"
+  | "roles";
 
 export function HomePage() {
   const { currentUser, logout } = useAuth();
@@ -47,6 +51,8 @@ export function HomePage() {
     { id: "restriction-settings", label: "Ограничения", visible: isHrAdmin },
     { id: "all-requests", label: "Все заявки", visible: isHrAdmin },
     { id: "audit-log", label: "Журнал изменений", visible: isHrAdmin },
+    { id: "employees", label: "Сотрудники", visible: isHrAdmin },
+    { id: "roles", label: "Роли", visible: isHrAdmin },
   ];
 
   return (
@@ -90,6 +96,8 @@ export function HomePage() {
       {tab === "restriction-settings" && <RestrictionSettingsPage />}
       {tab === "all-requests" && <AllRequestsPage />}
       {tab === "audit-log" && <AuditLogPage />}
+      {tab === "employees" && <EmployeesPage />}
+      {tab === "roles" && <RolesPage />}
     </div>
   );
 }

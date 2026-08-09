@@ -1,4 +1,4 @@
-import { differenceInCalendarDays, parseISO, startOfMonth } from "date-fns";
+import { differenceInCalendarDays, parseISO } from "date-fns";
 import { ru } from "date-fns/locale/ru";
 import { DayPicker, type DateRange, type Matcher } from "react-day-picker";
 import "react-day-picker/style.css";
@@ -10,6 +10,9 @@ interface Props {
   onChange: (range: DateRange | undefined) => void;
   blockedRanges: BlockedRangeOut[];
   minDays: number;
+  /** Плановый год — пикер показывает январь–декабрь именно этого года,
+   * а не 12 месяцев вперёд от сегодня (см. настройку "Плановый год"). */
+  year: number;
 }
 
 function toDateRangeMatchers(blockedRanges: BlockedRangeOut[]): Matcher[] {
@@ -19,9 +22,10 @@ function toDateRangeMatchers(blockedRanges: BlockedRangeOut[]): Matcher[] {
   }));
 }
 
-export function DateRangePicker({ range, onChange, blockedRanges, minDays }: Props) {
+export function DateRangePicker({ range, onChange, blockedRanges, minDays, year }: Props) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const yearStart = new Date(year, 0, 1);
 
   const disabled: Matcher[] = [{ before: today }, ...toDateRangeMatchers(blockedRanges)];
 
@@ -39,7 +43,7 @@ export function DateRangePicker({ range, onChange, blockedRanges, minDays }: Pro
           onSelect={onChange}
           disabled={disabled}
           numberOfMonths={12}
-          defaultMonth={startOfMonth(today)}
+          defaultMonth={yearStart}
           disableNavigation
           modifiers={{ blocked: toDateRangeMatchers(blockedRanges) }}
           modifiersStyles={{ blocked: { textDecoration: "line-through", color: "#b00" } }}

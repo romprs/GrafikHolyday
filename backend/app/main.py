@@ -5,6 +5,7 @@ from app.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.routers import (
     admin_sync,
+    admin_users,
     audit,
     auth_dev,
     blocked_periods,
@@ -40,6 +41,7 @@ app.include_router(restriction_settings.router)
 app.include_router(admin_sync.router)
 app.include_router(org_load.router)
 app.include_router(audit.router)
+app.include_router(admin_users.router)
 
 
 @app.get("/health")

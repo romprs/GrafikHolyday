@@ -16,7 +16,10 @@ from app.models.org_unit import OrgUnit
 from app.models.restriction_settings import (
     BLOCKED_PERIOD_ENFORCEMENT,
     DEPARTMENT_LOAD_THRESHOLDS,
+    LEAVE_BALANCE_LIMIT,
     MIN_LEAVE_DURATION,
+    OWN_OVERLAP_CHECK,
+    PLANNING_YEAR,
     RestrictionSettings,
 )
 from app.models.user import User
@@ -97,6 +100,24 @@ def seed() -> None:
                 True,
                 {"yellow": 0.30, "red": 0.50},
                 "Пороги подсветки загруженности отдела",
+            ),
+            (
+                LEAVE_BALANCE_LIMIT,
+                True,
+                {},
+                "Запрет заявок сверх остатка баланса отпуска",
+            ),
+            (
+                OWN_OVERLAP_CHECK,
+                True,
+                {},
+                "Запрет пересекающихся заявок одного сотрудника",
+            ),
+            (
+                PLANNING_YEAR,
+                True,
+                {"year": current_year},
+                "Год, на который сейчас ведётся планирование отпусков",
             ),
         )
         for key, enabled, params, description in default_settings:

@@ -7,6 +7,7 @@ from app.dependencies import CurrentUser, DbSession, require_role
 from app.models.user import User
 from app.schemas.leave_request import (
     LeaveRequestAdminOverride,
+    LeaveRequestBulkCreate,
     LeaveRequestCreate,
     LeaveRequestOut,
     LeaveRequestReview,
@@ -26,6 +27,14 @@ def create_leave_request(
         db, user, body.date_from, body.date_to, body.comment
     )
     return request
+
+
+@router.post("/bulk", response_model=list[LeaveRequestOut])
+def create_leave_requests_bulk(
+    body: LeaveRequestBulkCreate, db: DbSession, user: CurrentUser
+) -> list[LeaveRequestOut]:
+    periods = [(p.date_from, p.date_to, p.comment) for p in body.periods]
+    return leave_request_service.create_and_submit_bulk(db, user, periods)
 
 
 @router.get("/mine", response_model=list[LeaveRequestOut])

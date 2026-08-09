@@ -34,3 +34,9 @@ class RestrictionSettings(Base):
 MIN_LEAVE_DURATION = "min_leave_duration"
 BLOCKED_PERIOD_ENFORCEMENT = "blocked_period_enforcement"
 DEPARTMENT_LOAD_THRESHOLDS = "department_load_thresholds"
+LEAVE_BALANCE_LIMIT = "leave_balance_limit"
+OWN_OVERLAP_CHECK = "own_overlap_check"
+# Не ограничение (enabled/exemptable для неё не имеют смысла) — общий параметр
+# приложения, но хранится в той же таблице/API, чтобы не заводить отдельный
+# механизм настроек ради одного значения.
+PLANNING_YEAR = "planning_year"

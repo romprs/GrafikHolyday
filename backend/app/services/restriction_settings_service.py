@@ -1,8 +1,10 @@
+from datetime import date
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
-from app.models.restriction_settings import RestrictionSettings
+from app.models.restriction_settings import PLANNING_YEAR, RestrictionSettings
 from app.models.user import User
 
 
@@ -27,3 +29,12 @@ def update(
     db.commit()
     db.refresh(setting)
     return setting
+
+
+def get_planning_year(db: Session) -> int:
+    """Год, на который сейчас ведётся планирование отпусков — фиксируется HR
+    в настройках. Если не задан явно, используется текущий календарный год."""
+    setting = get(db, PLANNING_YEAR)
+    if setting is None:
+        return date.today().year
+    return int(setting.params.get("year", date.today().year))

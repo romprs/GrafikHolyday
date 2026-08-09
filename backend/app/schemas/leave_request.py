@@ -10,6 +10,10 @@ class LeaveRequestCreate(BaseModel):
     comment: str | None = None
 
 
+class LeaveRequestBulkCreate(BaseModel):
+    periods: list[LeaveRequestCreate]
+
+
 class LeaveRequestReview(BaseModel):
     comment: str | None = None
 
@@ -44,3 +48,9 @@ class LeaveBalanceOut(BaseModel):
     carried_over_days: float
     used_days: int
     remaining_days: float
+
+
+class LeaveBalanceSet(BaseModel):
+    year: int
+    accrued_days: float
+    carried_over_days: float = 0

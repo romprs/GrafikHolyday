@@ -4,11 +4,16 @@ from sqlalchemy.orm import Session
 
 from app.models.user import User
 from app.services import restriction_settings_service
-from app.services.validation import blocked_period_rule, min_duration_rule
+from app.services.validation import (
+    blocked_period_rule,
+    leave_balance_rule,
+    min_duration_rule,
+    own_overlap_rule,
+)
 from app.services.validation.types import Violation
 
 # Порядок важен только для порядка сообщений в ответе — на логику не влияет.
-_RULES = (min_duration_rule, blocked_period_rule)
+_RULES = (min_duration_rule, blocked_period_rule, leave_balance_rule, own_overlap_rule)
 
 
 def validate_leave_request(

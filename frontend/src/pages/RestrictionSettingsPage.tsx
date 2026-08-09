@@ -8,6 +8,9 @@ const keyLabelRu: Record<string, string> = {
   min_leave_duration: "Минимальная длительность отпуска",
   blocked_period_enforcement: "Блокировка недоступных периодов",
   department_load_thresholds: "Пороги загруженности отдела",
+  leave_balance_limit: "Запрет заявок сверх остатка баланса",
+  own_overlap_check: "Запрет пересекающихся заявок сотрудника",
+  planning_year: "Плановый год",
 };
 
 function SettingRow({ setting }: { setting: RestrictionSettingsOut }) {
@@ -31,13 +34,34 @@ function SettingRow({ setting }: { setting: RestrictionSettingsOut }) {
     }
   }
 
+  const isPlanningYear = setting.key === "planning_year";
+
   return (
     <tr>
       <td style={{ padding: "8px 0" }}>{keyLabelRu[setting.key] ?? setting.key}</td>
       <td>
-        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+        {!isPlanningYear && (
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+          />
+        )}
       </td>
       <td>
+        {isPlanningYear && (
+          <label>
+            год:{" "}
+            <input
+              type="number"
+              min={2020}
+              max={2100}
+              style={{ width: 80 }}
+              value={(params.year as number) ?? new Date().getFullYear()}
+              onChange={(e) => setParams({ ...params, year: Number(e.target.value) })}
+            />
+          </label>
+        )}
         {setting.key === "min_leave_duration" && (
           <label>
             мин. дней:{" "}

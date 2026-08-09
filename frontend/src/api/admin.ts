@@ -1,5 +1,11 @@
 import { apiFetch } from "./client";
-import type { AuditLogOut, LeaveRequestOut, RestrictionSettingsOut } from "./types";
+import type {
+  AuditLogOut,
+  LeaveBalanceOut,
+  LeaveRequestOut,
+  RestrictionSettingsOut,
+  UserWithRoleOut,
+} from "./types";
 
 export function updateRestrictionSetting(
   key: string,
@@ -27,4 +33,30 @@ export function adminOverrideLeaveRequest(
 
 export function listAuditLog(): Promise<AuditLogOut[]> {
   return apiFetch<AuditLogOut[]>("/admin/audit-log");
+}
+
+export function listUsersWithRoles(): Promise<UserWithRoleOut[]> {
+  return apiFetch<UserWithRoleOut[]>("/admin/users");
+}
+
+export function grantRole(userId: string, role: string): Promise<void> {
+  return apiFetch<void>(`/admin/users/${userId}/roles/${role}`, { method: "POST" });
+}
+
+export function revokeRole(userId: string, role: string): Promise<void> {
+  return apiFetch<void>(`/admin/users/${userId}/roles/${role}`, { method: "DELETE" });
+}
+
+export function getUserBalance(userId: string, year: number): Promise<LeaveBalanceOut> {
+  return apiFetch<LeaveBalanceOut>(`/leave-balances/${userId}?year=${year}`);
+}
+
+export function setUserBalance(
+  userId: string,
+  input: { year: number; accrued_days: number; carried_over_days: number },
+): Promise<LeaveBalanceOut> {
+  return apiFetch<LeaveBalanceOut>(`/leave-balances/${userId}`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
 }

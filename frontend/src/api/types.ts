@@ -126,3 +126,13 @@ export interface AuditLogOut {
   after_state: Record<string, unknown>;
   created_at: string;
 }
+
+export interface UserWithRoleOut {
+  id: string;
+  email: string;
+  full_name: string;
+  org_unit_id: string | null;
+  has_benefits: boolean;
+  is_active: boolean;
+  role: "employee" | "manager" | "hr_admin";
+}
