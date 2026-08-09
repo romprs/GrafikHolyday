@@ -21,6 +21,13 @@ export function removeDraft(id: string): Promise<void> {
   return apiFetch<void>(`/leave-requests/drafts/${id}`, { method: "DELETE" });
 }
 
+export function updateDraftBonus(id: string, bonusRequested: boolean): Promise<LeaveRequestOut> {
+  return apiFetch<LeaveRequestOut>(`/leave-requests/drafts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ bonus_requested: bonusRequested }),
+  });
+}
+
 export function submitDrafts(year?: number): Promise<LeaveRequestOut[]> {
   return apiFetch<LeaveRequestOut[]>(`/leave-requests/submit${year ? `?year=${year}` : ""}`, {
     method: "POST",

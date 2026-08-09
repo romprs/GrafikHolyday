@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from app.core.exceptions import ValidationFailedError
+from app.core.exceptions import ForbiddenError, ValidationFailedError
 from app.models.leave_balance import LeaveBalance
 from app.models.leave_type import LeaveType
 from app.models.restriction_settings import VACATION_BONUS, RestrictionSettings
@@ -66,3 +66,36 @@ def test_no_bonus_requested_does_not_check_threshold(db_session, employee, bonus
         db_session, employee, date(2026, 6, 1), date(2026, 6, 5), None, bonus_requested=False
     )
     assert request.bonus_requested is False
+
+
+def test_update_draft_bonus_toggles_after_creation(db_session, employee, bonus_setting):
+    # Доплата запрашивается отдельным действием на уже добавленном черновике,
+    # а не одновременно с выбором дат на календаре.
+    request = leave_request_service.create_draft(
+        db_session, employee, date(2026, 6, 1), date(2026, 6, 20), None
+    )
+    assert request.bonus_requested is False
+
+    updated = leave_request_service.update_draft_bonus(db_session, employee, request.id, True)
+    assert updated.bonus_requested is True
+
+    updated_again = leave_request_service.update_draft_bonus(db_session, employee, request.id, False)
+    assert updated_again.bonus_requested is False
+
+
+def test_update_draft_bonus_rejects_short_period(db_session, employee, bonus_setting):
+    request = leave_request_service.create_draft(
+        db_session, employee, date(2026, 6, 1), date(2026, 6, 5), None
+    )
+    with pytest.raises(ValidationFailedError):
+        leave_request_service.update_draft_bonus(db_session, employee, request.id, True)
+
+
+def test_update_draft_bonus_rejects_non_draft(db_session, employee, bonus_setting):
+    request = leave_request_service.create_draft(
+        db_session, employee, date(2026, 6, 1), date(2026, 6, 20), None
+    )
+    leave_request_service.submit_drafts(db_session, employee, 2026)
+    db_session.refresh(request)
+    with pytest.raises(ForbiddenError):
+        leave_request_service.update_draft_bonus(db_session, employee, request.id, True)

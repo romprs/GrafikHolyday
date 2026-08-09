@@ -103,3 +103,18 @@ def test_submit_succeeds_on_exact_balance_match(db_session, setup):
     assert len(submitted) == 2
     assert all(r.status == PENDING_APPROVAL for r in submitted)
     assert leave_request_service.list_drafts(db_session, setup["user"], 2026) == []
+
+
+def test_submit_assigns_shared_submission_id(db_session, setup):
+    # Все периоды одной отправки должны нести один submission_id, чтобы
+    # руководитель мог согласовать/отклонить их одним действием.
+    leave_request_service.create_draft(
+        db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 13), None
+    )
+    leave_request_service.create_draft(
+        db_session, setup["user"], date(2026, 9, 1), date(2026, 9, 7), None
+    )
+    submitted = leave_request_service.submit_drafts(db_session, setup["user"], 2026)
+    submission_ids = {r.submission_id for r in submitted}
+    assert len(submission_ids) == 1
+    assert None not in submission_ids

@@ -37,6 +37,11 @@ class LeaveRequest(UUIDPKMixin, TimestampMixin, Base):
     # Дополнительная выплата к отпуску — доступна при длительности периода
     # больше порога из restriction_settings[VACATION_BONUS] (см. validation).
     bonus_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Общий id для всех периодов, отправленных на согласование одним нажатием
+    # submit_drafts — руководитель согласовывает/отклоняет всю пачку разом,
+    # а не по одному периоду. NULL у черновиков и у заявок, созданных до
+    # появления этого поля.
+    submission_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True

@@ -86,6 +86,30 @@ def create_draft(
     return request
 
 
+def update_draft_bonus(
+    db: Session, user: User, request_id: uuid.UUID, bonus_requested: bool
+) -> LeaveRequest:
+    """Переключает запрос доплаты на уже добавленном черновике.
+
+    Отдельная операция, а не флаг при добавлении периода — доплату можно
+    попросить только для периода длиннее порога, а узнать итоговую
+    длительность пользователь может только после завершения выбора дат;
+    переключение на уже добавленном черновике не завязано на состояние
+    выбора на календаре (в отличие от чекбокса во время выбора, который
+    сбрасывался при уводе мыши с календаря для клика по чекбоксу).
+    """
+    request = get_own(db, user, request_id)
+    if request.status != DRAFT:
+        raise ForbiddenError(
+            "Изменить можно только ещё не отправленный период", {"current_status": request.status}
+        )
+    _validate_bonus_request(db, request.date_from, request.date_to, bonus_requested)
+    request.bonus_requested = bonus_requested
+    db.commit()
+    db.refresh(request)
+    return request
+
+
 def list_drafts(db: Session, user: User, year: int) -> list[LeaveRequest]:
     year_start = date(year, 1, 1)
     year_end = date(year, 12, 31)
@@ -141,9 +165,11 @@ def submit_drafts(db: Session, user: User, year: int) -> list[LeaveRequest]:
             )
 
     now = datetime.now(timezone.utc)
+    submission_id = uuid.uuid4()
     for draft in drafts:
         draft.status = PENDING_APPROVAL
         draft.submitted_at = now
+        draft.submission_id = submission_id
     db.commit()
     for draft in drafts:
         db.refresh(draft)

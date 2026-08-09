@@ -4,7 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import type { DateRange } from "react-day-picker";
 import { ApiError } from "../api/client";
 import { getBlockedRanges, getRestrictionSettings } from "../api/calendar";
-import { addDraft, getMyBalance, listDrafts, removeDraft, submitDrafts } from "../api/leaveRequests";
+import {
+  addDraft,
+  getMyBalance,
+  listDrafts,
+  removeDraft,
+  submitDrafts,
+  updateDraftBonus,
+} from "../api/leaveRequests";
 import { DateRangePicker } from "../components/DateRangePicker";
 
 function toIsoDate(d: Date): string {
@@ -15,17 +22,12 @@ export function RequestFormPage() {
   const queryClient = useQueryClient();
   const [range, setRange] = useState<DateRange | undefined>();
   const [hoverDay, setHoverDay] = useState<Date | undefined>();
-  const [bonusRequested, setBonusRequested] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [adding, setAdding] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const lastAutoAddedKey = useRef<string | null>(null);
 
-  const { data: blockedRanges } = useQuery({
-    queryKey: ["blocked-ranges"],
-    queryFn: getBlockedRanges,
-  });
   const { data: restrictionSettings } = useQuery({
     queryKey: ["restriction-settings"],
     queryFn: getRestrictionSettings,
@@ -40,6 +42,14 @@ export function RequestFormPage() {
     typeof planningYearSetting?.params.year === "number"
       ? planningYearSetting.params.year
       : new Date().getFullYear();
+
+  // Ограничиваем недоступные периоды плановым годом — иначе показывались бы
+  // вперемешку блокировки из всех лет, а не только те, что относятся к
+  // текущему плановому году, который видно на календаре.
+  const { data: blockedRanges } = useQuery({
+    queryKey: ["blocked-ranges", planningYear],
+    queryFn: () => getBlockedRanges(`${planningYear}-01-01`, `${planningYear}-12-31`),
+  });
 
   const { data: drafts, isLoading: draftsLoading } = useQuery({
     queryKey: ["drafts", planningYear],
@@ -74,7 +84,6 @@ export function RequestFormPage() {
     : range?.from && range?.to
       ? differenceInCalendarDays(range.to, range.from) + 1
       : null;
-  const qualifiesForBonus = currentRangeDays !== null && currentRangeDays > bonusMinDays;
 
   const plannedTotalDays = (drafts ?? []).reduce((sum, p) => sum + p.days, 0);
   const remainingAfterPlanned =
@@ -91,7 +100,6 @@ export function RequestFormPage() {
   function clearSelection() {
     setRange(undefined);
     setHoverDay(undefined);
-    setBonusRequested(false);
   }
 
   async function handleAddPeriod(from: Date, to: Date) {
@@ -102,7 +110,6 @@ export function RequestFormPage() {
       await addDraft({
         date_from: toIsoDate(from),
         date_to: toIsoDate(to),
-        bonus_requested: bonusRequested && qualifiesForBonus,
       });
       clearSelection();
       queryClient.invalidateQueries({ queryKey: ["drafts"] });
@@ -110,6 +117,16 @@ export function RequestFormPage() {
       setError(err instanceof ApiError ? err.message : "Не удалось добавить период");
     } finally {
       setAdding(false);
+    }
+  }
+
+  async function handleToggleBonus(id: string, next: boolean) {
+    setError(null);
+    try {
+      await updateDraftBonus(id, next);
+      queryClient.invalidateQueries({ queryKey: ["drafts"] });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Не удалось изменить доплату");
     }
   }
 
@@ -217,26 +234,6 @@ export function RequestFormPage() {
             )}
           </div>
 
-          {bonusProgramEnabled && (
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                color: qualifiesForBonus ? undefined : "#aaa",
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={bonusRequested}
-                disabled={!qualifiesForBonus}
-                onChange={(e) => setBonusRequested(e.target.checked)}
-              />
-              Запросить доплату к отпуску
-              {!qualifiesForBonus && ` (доступно от ${bonusMinDays + 1} дн.)`}
-            </label>
-          )}
-
           <div>
             <button type="button" onClick={clearSelection} disabled={!range?.from || adding}>
               Очистить выбор
@@ -253,10 +250,21 @@ export function RequestFormPage() {
                   {drafts.map((d) => (
                     <tr key={d.id}>
                       <td>
-                        {d.date_from} — {d.date_to} ({d.days} дн.)
-                        {d.bonus_requested && " 🎁"}
+                        <div>
+                          {d.date_from} — {d.date_to} ({d.days} дн.)
+                        </div>
+                        {bonusProgramEnabled && d.days > bonusMinDays && (
+                          <label style={{ fontSize: "0.85em", color: "#888" }}>
+                            <input
+                              type="checkbox"
+                              checked={d.bonus_requested}
+                              onChange={(e) => handleToggleBonus(d.id, e.target.checked)}
+                            />{" "}
+                            🎁 доплата к этому периоду
+                          </label>
+                        )}
                       </td>
-                      <td>
+                      <td style={{ verticalAlign: "top" }}>
                         <button type="button" onClick={() => handleRemovePeriod(d.id)}>
                           Убрать
                         </button>

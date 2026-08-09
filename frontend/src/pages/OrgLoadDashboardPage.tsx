@@ -132,9 +132,9 @@ export function OrgLoadDashboardPage() {
   const clickedDayEmployees = clickedDay ? employeesOnLeave(clickedDay) : [];
 
   return (
-    <div>
-      <h3>Загруженность отдела ({year} год)</h3>
-      <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "flex-start" }}>
+    <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
+      <div style={{ flex: "1 1 700px", minWidth: 0 }}>
+        <h3>Загруженность отдела ({year} год)</h3>
         <div>
           <label>
             Подразделение:{" "}
@@ -203,20 +203,6 @@ export function OrgLoadDashboardPage() {
             </p>
           )}
         </div>
-
-        {clickedDay && (
-          <div style={{ border: "1px solid #ccc", padding: 12, minWidth: 220 }}>
-            <strong>{clickedDay}</strong>
-            <ul style={{ margin: "4px 0 0 0", paddingLeft: 20 }}>
-              {clickedDayEmployees.map((e) => (
-                <li key={e.id}>{e.full_name}</li>
-              ))}
-              {clickedDayEmployees.length === 0 && <li>Никто не в отпуске</li>}
-            </ul>
-            <button onClick={() => setClickedDay(null)}>Закрыть</button>
-          </div>
-        )}
-      </div>
 
       <p style={{ marginTop: 12 }}>
         В анализе: <strong>{inScopeEmployees.length}</strong> чел.
@@ -325,6 +311,31 @@ export function OrgLoadDashboardPage() {
           нет отпусков (клик недоступен)
         </span>
       </div>
+      </div>
+
+      {clickedDay && (
+        <div
+          style={{
+            flex: "0 0 280px",
+            border: "1px solid #ccc",
+            borderRadius: 6,
+            padding: 12,
+            maxHeight: "70vh",
+            overflowY: "auto",
+            position: "sticky",
+            top: 16,
+          }}
+        >
+          <strong>{clickedDay}</strong>
+          <ul style={{ margin: "4px 0 0 0", paddingLeft: 20 }}>
+            {clickedDayEmployees.map((e) => (
+              <li key={e.id}>{e.full_name}</li>
+            ))}
+            {clickedDayEmployees.length === 0 && <li>Никто не в отпуске</li>}
+          </ul>
+          <button onClick={() => setClickedDay(null)}>Закрыть</button>
+        </div>
+      )}
     </div>
   );
 }

@@ -7,6 +7,7 @@ from app.dependencies import CurrentUser, DbSession, require_role
 from app.models.user import User
 from app.schemas.leave_request import (
     LeaveRequestAdminOverride,
+    LeaveRequestBonusUpdate,
     LeaveRequestCreate,
     LeaveRequestOut,
     LeaveRequestReview,
@@ -37,6 +38,13 @@ def add_draft(body: LeaveRequestCreate, db: DbSession, user: CurrentUser) -> Lea
 @router.delete("/drafts/{request_id}", status_code=204)
 def remove_draft(request_id: uuid.UUID, db: DbSession, user: CurrentUser) -> None:
     leave_request_service.delete_draft(db, user, request_id)
+
+
+@router.patch("/drafts/{request_id}", response_model=LeaveRequestOut)
+def update_draft(
+    request_id: uuid.UUID, body: LeaveRequestBonusUpdate, db: DbSession, user: CurrentUser
+) -> LeaveRequestOut:
+    return leave_request_service.update_draft_bonus(db, user, request_id, body.bonus_requested)
 
 
 @router.post("/submit", response_model=list[LeaveRequestOut])

@@ -18,7 +18,7 @@ export function TeamCalendarPage() {
   });
   const { data: blockedRanges } = useQuery({
     queryKey: ["blocked-ranges"],
-    queryFn: getBlockedRanges,
+    queryFn: () => getBlockedRanges(),
   });
 
   return (

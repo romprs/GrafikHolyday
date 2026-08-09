@@ -35,6 +35,7 @@ export interface LeaveRequestOut {
   comment: string | null;
   status: LeaveRequestStatus;
   bonus_requested: boolean;
+  submission_id: string | null;
   reviewer_id: string | null;
   review_comment: string | null;
   submitted_at: string | null;
