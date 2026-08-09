@@ -12,5 +12,8 @@ frontend/dist/
 frontend/package-lock.json
 frontend/*.tsbuildinfo
 
+# deploy
+deploy/redos8/dist/
+
 # misc
 .DS_Store
