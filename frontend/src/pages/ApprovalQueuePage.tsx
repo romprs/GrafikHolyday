@@ -28,6 +28,7 @@ export function ApprovalQueuePage() {
             <tr key={r.id}>
               <td>
                 {r.date_from} — {r.date_to} ({r.days} дн.)
+                {r.bonus_requested && " 🎁 доплата"}
               </td>
               <td>{r.comment}</td>
               <td>

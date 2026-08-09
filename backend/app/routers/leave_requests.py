@@ -29,7 +29,9 @@ def list_drafts(db: DbSession, user: CurrentUser, year: int | None = None) -> li
 
 @router.post("/drafts", response_model=LeaveRequestOut)
 def add_draft(body: LeaveRequestCreate, db: DbSession, user: CurrentUser) -> LeaveRequestOut:
-    return leave_request_service.create_draft(db, user, body.date_from, body.date_to, body.comment)
+    return leave_request_service.create_draft(
+        db, user, body.date_from, body.date_to, body.comment, body.bonus_requested
+    )
 
 
 @router.delete("/drafts/{request_id}", status_code=204)

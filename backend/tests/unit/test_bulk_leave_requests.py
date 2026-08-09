@@ -32,11 +32,12 @@ def setup(db_session):
 
 
 def test_adds_multiple_non_overlapping_drafts(db_session, setup):
+    # Баланс 20: 7 + 13 = 20 — остаток после каждого добавления либо >= 7, либо 0.
     leave_request_service.create_draft(
         db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 7), None
     )
     leave_request_service.create_draft(
-        db_session, setup["user"], date(2026, 9, 1), date(2026, 9, 7), None
+        db_session, setup["user"], date(2026, 9, 1), date(2026, 9, 13), None
     )
     drafts = leave_request_service.list_drafts(db_session, setup["user"], 2026)
     assert len(drafts) == 2
@@ -53,9 +54,9 @@ def test_rejects_periods_overlapping_each_other(db_session, setup):
 
 
 def test_rejects_draft_exceeding_remaining_balance(db_session, setup):
-    # Баланс 20: первый черновик — 14 дней (остаток 6), второй на 7 дней уже не помещается.
+    # Баланс 20: первый черновик выбирает весь остаток (остаток 0), второй уже не помещается.
     leave_request_service.create_draft(
-        db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 14), None
+        db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 20), None
     )
     with pytest.raises(ValidationFailedError):
         leave_request_service.create_draft(

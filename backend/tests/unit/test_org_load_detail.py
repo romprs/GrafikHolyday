@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from app.models.leave_request import APPROVED, LeaveRequest
+from app.models.leave_request import APPROVED, DRAFT, PENDING_APPROVAL, LeaveRequest
 from app.models.leave_type import LeaveType
 from app.models.org_unit import OrgUnit
 from app.models.user import User
@@ -37,7 +37,7 @@ def scenario(db_session):
     )
     db_session.flush()
 
-    return {"dept": dept, "manager": manager, "employee": employee}
+    return {"dept": dept, "manager": manager, "employee": employee, "leave_type": lt}
 
 
 def test_employees_include_resolved_role(db_session, scenario):
@@ -49,12 +49,13 @@ def test_employees_include_resolved_role(db_session, scenario):
     assert roles["Пётр Работников"] == "employee"
 
 
-def test_leaves_only_approved_within_range(db_session, scenario):
+def test_leaves_within_range(db_session, scenario):
     result = org_load_service.get_org_leave_detail(
         db_session, scenario["dept"].id, date(2026, 6, 1), date(2026, 6, 30)
     )
     assert len(result["leaves"]) == 1
     assert result["leaves"][0]["user_id"] == scenario["employee"].id
+    assert result["leaves"][0]["status"] == APPROVED
 
 
 def test_leaves_outside_range_excluded(db_session, scenario):
@@ -62,3 +63,31 @@ def test_leaves_outside_range_excluded(db_session, scenario):
         db_session, scenario["dept"].id, date(2026, 7, 1), date(2026, 7, 30)
     )
     assert result["leaves"] == []
+
+
+def test_leaves_include_draft_and_pending(db_session, scenario):
+    db_session.add_all(
+        [
+            LeaveRequest(
+                user_id=scenario["employee"].id,
+                leave_type_id=scenario["leave_type"].id,
+                date_from=date(2026, 6, 10),
+                date_to=date(2026, 6, 12),
+                status=DRAFT,
+            ),
+            LeaveRequest(
+                user_id=scenario["manager"].id,
+                leave_type_id=scenario["leave_type"].id,
+                date_from=date(2026, 6, 15),
+                date_to=date(2026, 6, 17),
+                status=PENDING_APPROVAL,
+            ),
+        ]
+    )
+    db_session.flush()
+
+    result = org_load_service.get_org_leave_detail(
+        db_session, scenario["dept"].id, date(2026, 6, 1), date(2026, 6, 30)
+    )
+    statuses = {r["status"] for r in result["leaves"]}
+    assert statuses == {APPROVED, DRAFT, PENDING_APPROVAL}

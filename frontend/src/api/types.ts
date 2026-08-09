@@ -34,6 +34,7 @@ export interface LeaveRequestOut {
   date_to: string;
   comment: string | null;
   status: LeaveRequestStatus;
+  bonus_requested: boolean;
   reviewer_id: string | null;
   review_comment: string | null;
   submitted_at: string | null;

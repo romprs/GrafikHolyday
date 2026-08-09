@@ -14,13 +14,16 @@ from app.models.leave_balance import LeaveBalance
 from app.models.leave_type import LeaveType
 from app.models.org_unit import OrgUnit
 from app.models.restriction_settings import (
+    AUTH_CONFIGURATION,
     BLOCKED_PERIOD_ENFORCEMENT,
     DEPARTMENT_LOAD_THRESHOLDS,
+    EXTERNAL_SOURCE_CONNECTION,
     LEAVE_BALANCE_LIMIT,
     MIN_LEAVE_DURATION,
     OWN_OVERLAP_CHECK,
     PLANNING_YEAR,
     RestrictionSettings,
+    VACATION_BONUS,
 )
 from app.models.user import User
 from app.models.user_role import UserRole
@@ -118,6 +121,30 @@ def seed() -> None:
                 True,
                 {"year": current_year},
                 "Год, на который сейчас ведётся планирование отпусков",
+            ),
+            (
+                VACATION_BONUS,
+                True,
+                {"min_days": 14},
+                "Порог длительности отпуска для дополнительной выплаты",
+            ),
+            (
+                EXTERNAL_SOURCE_CONNECTION,
+                False,
+                {"base_url": "", "api_key": "", "poll_interval_minutes": 60},
+                "Подключение к внешней системе-источнику оргструктуры",
+            ),
+            (
+                AUTH_CONFIGURATION,
+                False,
+                {
+                    "mode": "dev",
+                    "oidc_issuer": "",
+                    "oidc_client_id": "",
+                    "oidc_client_secret": "",
+                    "oidc_redirect_uri": "",
+                },
+                "Настройки авторизации (dev-режим или OIDC)",
             ),
         )
         for key, enabled, params, description in default_settings:

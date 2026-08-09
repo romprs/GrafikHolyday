@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -34,6 +34,9 @@ class LeaveRequest(UUIDPKMixin, TimestampMixin, Base):
     date_to: Mapped[date] = mapped_column(Date, nullable=False)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False, default=PENDING_APPROVAL)
+    # Дополнительная выплата к отпуску — доступна при длительности периода
+    # больше порога из restriction_settings[VACATION_BONUS] (см. validation).
+    bonus_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True

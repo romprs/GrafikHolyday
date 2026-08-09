@@ -8,6 +8,7 @@ class LeaveRequestCreate(BaseModel):
     date_from: date
     date_to: date
     comment: str | None = None
+    bonus_requested: bool = False
 
 
 class LeaveRequestReview(BaseModel):
@@ -30,6 +31,7 @@ class LeaveRequestOut(BaseModel):
     date_to: date
     comment: str | None
     status: str
+    bonus_requested: bool
     reviewer_id: uuid.UUID | None
     review_comment: str | None
     submitted_at: datetime | None

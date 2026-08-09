@@ -9,6 +9,7 @@ export function addDraft(input: {
   date_from: string;
   date_to: string;
   comment?: string;
+  bonus_requested?: boolean;
 }): Promise<LeaveRequestOut> {
   return apiFetch<LeaveRequestOut>("/leave-requests/drafts", {
     method: "POST",

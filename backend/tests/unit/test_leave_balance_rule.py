@@ -5,7 +5,11 @@ import pytest
 from app.models.leave_balance import LeaveBalance
 from app.models.leave_request import APPROVED, PENDING_APPROVAL, LeaveRequest
 from app.models.leave_type import LeaveType
-from app.models.restriction_settings import LEAVE_BALANCE_LIMIT, RestrictionSettings
+from app.models.restriction_settings import (
+    LEAVE_BALANCE_LIMIT,
+    MIN_LEAVE_DURATION,
+    RestrictionSettings,
+)
 from app.models.user import User
 from app.services import leave_balance_service
 from app.services.validation.engine import validate_leave_request
@@ -73,6 +77,41 @@ def test_set_balance_creates_and_updates(db_session):
     balance2 = leave_balance_service.set_balance(db_session, hr, employee, 2027, 30, 0)
     assert balance2.id == balance.id
     assert balance2.accrued_days == 30
+
+
+def test_stranded_remainder_rejected_when_min_duration_enabled(db_session, setup):
+    db_session.add(RestrictionSettings(key=MIN_LEAVE_DURATION, enabled=True, params={"min_days": 7}))
+    db_session.flush()
+
+    # Баланс 10: период на 6 дней оставит остаток 4 — меньше минимума 7, использовать нельзя.
+    violations = validate_leave_request(db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 6))
+    assert any(v.code == "LEAVE_BALANCE_STRANDED_REMAINDER" for v in violations)
+
+
+def test_remainder_exactly_zero_is_allowed(db_session, setup):
+    db_session.add(RestrictionSettings(key=MIN_LEAVE_DURATION, enabled=True, params={"min_days": 7}))
+    db_session.flush()
+
+    # Баланс 10: период на все 10 дней — остаток 0, это нормально.
+    violations = validate_leave_request(db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 10))
+    assert not any(v.code == "LEAVE_BALANCE_STRANDED_REMAINDER" for v in violations)
+
+
+def test_remainder_above_min_duration_is_allowed(db_session, setup):
+    db_session.add(RestrictionSettings(key=MIN_LEAVE_DURATION, enabled=True, params={"min_days": 7}))
+    db_session.flush()
+
+    # Баланс 10: период на 3 дня оставит остаток 7 — ровно минимум, можно.
+    violations = validate_leave_request(db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 3))
+    assert not any(v.code == "LEAVE_BALANCE_STRANDED_REMAINDER" for v in violations)
+
+
+def test_stranded_remainder_ignored_when_min_duration_disabled(db_session, setup):
+    db_session.add(RestrictionSettings(key=MIN_LEAVE_DURATION, enabled=False, params={"min_days": 7}))
+    db_session.flush()
+
+    violations = validate_leave_request(db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 6))
+    assert not any(v.code == "LEAVE_BALANCE_STRANDED_REMAINDER" for v in violations)
 
 
 def test_get_remaining_for_new_request_excludes_given_ids(db_session, setup):

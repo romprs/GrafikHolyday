@@ -15,6 +15,7 @@ export function RequestFormPage() {
   const queryClient = useQueryClient();
   const [range, setRange] = useState<DateRange | undefined>();
   const [comment, setComment] = useState("");
+  const [bonusRequested, setBonusRequested] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -50,9 +51,15 @@ export function RequestFormPage() {
       ? minDaysSetting.params.min_days
       : 1;
 
+  const bonusSetting = restrictionSettings?.find((s) => s.key === "vacation_bonus");
+  const bonusMinDays =
+    typeof bonusSetting?.params.min_days === "number" ? bonusSetting.params.min_days : 14;
+  const bonusProgramEnabled = bonusSetting?.enabled ?? false;
+
   const currentRangeDays =
     range?.from && range?.to ? differenceInCalendarDays(range.to, range.from) + 1 : null;
   const canAddPeriod = currentRangeDays !== null && currentRangeDays >= minDays;
+  const qualifiesForBonus = currentRangeDays !== null && currentRangeDays > bonusMinDays;
 
   const plannedTotalDays = (drafts ?? []).reduce((sum, p) => sum + p.days, 0);
   const remainingAfterPlanned =
@@ -60,20 +67,16 @@ export function RequestFormPage() {
   const readyToSubmit =
     (drafts?.length ?? 0) > 0 && remainingAfterPlanned !== null && remainingAfterPlanned === 0;
 
-  // Уже добавленные черновики тоже нельзя выбрать повторно —
-  // показываем их в пикере как занятые, наравне с недоступными периодами.
-  const rangesWithPlanned = [
-    ...(blockedRanges ?? []),
-    ...(drafts ?? []).map((d) => ({
-      date_from: d.date_from,
-      date_to: d.date_to,
-      reason: "Уже добавлено в эту заявку",
-    })),
-  ];
+  const plannedRanges = (drafts ?? []).map((d) => ({
+    date_from: d.date_from,
+    date_to: d.date_to,
+    reason: "Уже добавлено в эту заявку",
+  }));
 
   function clearSelection() {
     setRange(undefined);
     setComment("");
+    setBonusRequested(false);
   }
 
   async function handleAddPeriod() {
@@ -86,6 +89,7 @@ export function RequestFormPage() {
         date_from: toIsoDate(range.from),
         date_to: toIsoDate(range.to),
         comment: comment || undefined,
+        bonus_requested: bonusRequested && qualifiesForBonus,
       });
       clearSelection();
       queryClient.invalidateQueries({ queryKey: ["drafts"] });
@@ -124,6 +128,8 @@ export function RequestFormPage() {
     }
   }
 
+  const tooShort = currentRangeDays !== null && currentRangeDays < minDays;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <h3>Новая заявка на отпуск</h3>
@@ -142,28 +148,80 @@ export function RequestFormPage() {
         </p>
       )}
 
-      <DateRangePicker
-        range={range}
-        onChange={setRange}
-        blockedRanges={rangesWithPlanned}
-        minDays={minDays}
-        year={planningYear}
-      />
-      <label>
-        Комментарий к периоду
-        <textarea
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          style={{ display: "block", width: "100%" }}
-        />
-      </label>
-      <div style={{ display: "flex", gap: 8 }}>
-        <button type="button" onClick={handleAddPeriod} disabled={!canAddPeriod || adding}>
-          Добавить период в план
-        </button>
-        <button type="button" onClick={clearSelection} disabled={!range?.from && !comment}>
-          Очистить выбор
-        </button>
+      <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div style={{ flex: "0 0 928px", maxWidth: 928 }}>
+          <DateRangePicker
+            range={range}
+            onChange={setRange}
+            blockedRanges={blockedRanges ?? []}
+            plannedRanges={plannedRanges}
+            year={planningYear}
+          />
+        </div>
+
+        <div
+          style={{
+            flex: "0 0 260px",
+            border: "1px solid #ddd",
+            borderRadius: 6,
+            padding: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            position: "sticky",
+            top: 16,
+          }}
+        >
+          <div>
+            {currentRangeDays !== null ? (
+              <p style={{ margin: 0, color: tooShort ? "crimson" : undefined }}>
+                Длительность: <strong>{currentRangeDays} дн.</strong>
+                {tooShort && ` — минимум ${minDays} дн.`}
+              </p>
+            ) : (
+              <p style={{ margin: 0, color: "#888" }}>Выберите период на календаре слева.</p>
+            )}
+          </div>
+
+          <label>
+            Комментарий к периоду
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              style={{ display: "block", width: "100%" }}
+              rows={3}
+            />
+          </label>
+
+          {bonusProgramEnabled && (
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                color: qualifiesForBonus ? undefined : "#aaa",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={bonusRequested}
+                disabled={!qualifiesForBonus}
+                onChange={(e) => setBonusRequested(e.target.checked)}
+              />
+              Запросить доплату к отпуску
+              {!qualifiesForBonus && ` (доступно от ${bonusMinDays + 1} дн.)`}
+            </label>
+          )}
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" onClick={handleAddPeriod} disabled={!canAddPeriod || adding}>
+              Добавить период в план
+            </button>
+            <button type="button" onClick={clearSelection} disabled={!range?.from && !comment}>
+              Очистить выбор
+            </button>
+          </div>
+        </div>
       </div>
 
       {draftsLoading && <p>Загрузка плана…</p>}
@@ -177,6 +235,7 @@ export function RequestFormPage() {
                 <tr key={d.id}>
                   <td>
                     {d.date_from} — {d.date_to} ({d.days} дн.)
+                    {d.bonus_requested && " 🎁 доплата"}
                   </td>
                   <td>{d.comment}</td>
                   <td>

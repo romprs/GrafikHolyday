@@ -11,6 +11,7 @@ const keyLabelRu: Record<string, string> = {
   leave_balance_limit: "Запрет заявок сверх остатка баланса",
   own_overlap_check: "Запрет пересекающихся заявок сотрудника",
   planning_year: "Плановый год",
+  vacation_bonus: "Доплата к отпуску",
 };
 
 function SettingRow({ setting }: { setting: RestrictionSettingsOut }) {
@@ -74,6 +75,18 @@ function SettingRow({ setting }: { setting: RestrictionSettingsOut }) {
             />
           </label>
         )}
+        {setting.key === "vacation_bonus" && (
+          <label>
+            более, дней:{" "}
+            <input
+              type="number"
+              min={1}
+              style={{ width: 60 }}
+              value={(params.min_days as number) ?? 14}
+              onChange={(e) => setParams({ ...params, min_days: Number(e.target.value) })}
+            />
+          </label>
+        )}
         {setting.key === "department_load_thresholds" && (
           <>
             <label>
@@ -131,9 +144,11 @@ export function RestrictionSettingsPage() {
           </tr>
         </thead>
         <tbody>
-          {settings?.map((s) => (
-            <SettingRow key={s.key} setting={s} />
-          ))}
+          {settings
+            ?.filter((s) => s.key !== "external_source_connection" && s.key !== "auth_configuration")
+            .map((s) => (
+              <SettingRow key={s.key} setting={s} />
+            ))}
         </tbody>
       </table>
     </div>

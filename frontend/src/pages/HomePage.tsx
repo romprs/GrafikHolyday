@@ -6,6 +6,7 @@ import { AuditLogPage } from "./AuditLogPage";
 import { BlockedPeriodsPage } from "./BlockedPeriodsPage";
 import { roleLabel } from "./DevLoginPage";
 import { EmployeesPage } from "./EmployeesPage";
+import { IntegrationsSettingsPage } from "./IntegrationsSettingsPage";
 import { MyRequestsPage } from "./MyRequestsPage";
 import { OrgLoadDashboardPage } from "./OrgLoadDashboardPage";
 import { OrgUnitsPage } from "./OrgUnitsPage";
@@ -25,6 +26,7 @@ type Tab =
   | "org-load"
   | "sync"
   | "restriction-settings"
+  | "integrations"
   | "all-requests"
   | "audit-log"
   | "employees"
@@ -49,6 +51,7 @@ export function HomePage() {
     { id: "org-load", label: "Загруженность отделов", visible: isManagerOrHr },
     { id: "sync", label: "Синхронизация", visible: isHrAdmin },
     { id: "restriction-settings", label: "Ограничения", visible: isHrAdmin },
+    { id: "integrations", label: "Интеграции", visible: isHrAdmin },
     { id: "all-requests", label: "Все заявки", visible: isHrAdmin },
     { id: "audit-log", label: "Журнал изменений", visible: isHrAdmin },
     { id: "employees", label: "Сотрудники", visible: isHrAdmin },
@@ -56,7 +59,7 @@ export function HomePage() {
   ];
 
   return (
-    <div style={{ maxWidth: 1200, margin: "2rem auto", fontFamily: "sans-serif", padding: "0 16px" }}>
+    <div style={{ maxWidth: 1440, margin: "2rem auto", fontFamily: "sans-serif", padding: "0 16px" }}>
       <h1>Планирование отпусков</h1>
       <p>
         Вы вошли как <strong>{currentUser.full_name}</strong> ({roleLabel(currentUser.role)})
@@ -94,6 +97,7 @@ export function HomePage() {
       {tab === "org-load" && <OrgLoadDashboardPage />}
       {tab === "sync" && <SyncPage />}
       {tab === "restriction-settings" && <RestrictionSettingsPage />}
+      {tab === "integrations" && <IntegrationsSettingsPage />}
       {tab === "all-requests" && <AllRequestsPage />}
       {tab === "audit-log" && <AuditLogPage />}
       {tab === "employees" && <EmployeesPage />}

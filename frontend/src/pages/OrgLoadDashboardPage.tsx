@@ -223,14 +223,14 @@ export function OrgLoadDashboardPage() {
       </p>
 
       <div style={{ overflowX: "auto" }}>
-        <table style={{ borderCollapse: "collapse", fontSize: 11 }}>
+        <table style={{ borderCollapse: "collapse", fontSize: 15 }}>
           <thead>
             <tr>
-              <th style={{ textAlign: "left", padding: "2px 8px 2px 0", whiteSpace: "nowrap" }}>
+              <th style={{ textAlign: "left", padding: "3px 12px 3px 0", whiteSpace: "nowrap" }}>
                 Месяц
               </th>
               {Array.from({ length: 31 }, (_, i) => (
-                <th key={i} style={{ width: 22, fontWeight: 400 }}>
+                <th key={i} style={{ width: 34, fontWeight: 400 }}>
                   {i + 1}
                 </th>
               ))}
@@ -244,7 +244,7 @@ export function OrgLoadDashboardPage() {
                   <td
                     style={{
                       textAlign: "left",
-                      padding: "2px 8px 2px 0",
+                      padding: "3px 12px 3px 0",
                       whiteSpace: "nowrap",
                       textTransform: "capitalize",
                       fontWeight: 600,
@@ -262,7 +262,7 @@ export function OrgLoadDashboardPage() {
                       : 0;
                     const empty = onLeave.length === 0;
                     return (
-                      <td key={day} style={{ padding: 1 }}>
+                      <td key={day} style={{ padding: 2 }}>
                         <button
                           onClick={() => setClickedDay(dateIso)}
                           disabled={empty}
@@ -272,16 +272,17 @@ export function OrgLoadDashboardPage() {
                               : `${dateIso}: ${onLeave.length} в отпуске — ${onLeave.map((e) => e.full_name).join(", ")}`
                           }
                           style={{
-                            width: 20,
-                            height: 20,
+                            width: 32,
+                            height: 32,
                             border: "none",
-                            borderRadius: 2,
+                            borderRadius: 4,
                             cursor: empty ? "default" : "pointer",
                             background: empty
                               ? "#f0f0f0"
                               : bandColor[band(fraction, yellowThreshold, redThreshold)],
                             color: empty ? "#bbb" : "white",
-                            fontSize: 9,
+                            fontSize: 13,
+                            fontWeight: 600,
                           }}
                         >
                           {empty ? "" : onLeave.length}

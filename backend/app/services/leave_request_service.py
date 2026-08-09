@@ -13,8 +13,9 @@ from app.models.leave_request import (
     LeaveRequest,
 )
 from app.models.leave_type import LeaveType
+from app.models.restriction_settings import VACATION_BONUS
 from app.models.user import User
-from app.services import leave_balance_service
+from app.services import leave_balance_service, restriction_settings_service
 from app.services.validation import engine as validation_engine
 
 
@@ -25,8 +26,29 @@ def _get_vacation_leave_type(db: Session) -> LeaveType:
     return leave_type
 
 
+def _validate_bonus_request(db: Session, date_from: date, date_to: date, bonus_requested: bool) -> None:
+    if not bonus_requested:
+        return
+    setting = restriction_settings_service.get(db, VACATION_BONUS)
+    if setting is None or not setting.enabled:
+        raise ValidationFailedError("Программа дополнительной выплаты к отпуску сейчас отключена")
+    min_days = setting.params.get("min_days", 14)
+    days = (date_to - date_from).days + 1
+    if days <= min_days:
+        raise ValidationFailedError(
+            f"Дополнительную выплату можно запросить только к отпуску длительностью более "
+            f"{min_days} дн. (выбрано {days} дн.)",
+            {"selected_days": days, "min_days": min_days},
+        )
+
+
 def create_draft(
-    db: Session, user: User, date_from: date, date_to: date, comment: str | None
+    db: Session,
+    user: User,
+    date_from: date,
+    date_to: date,
+    comment: str | None,
+    bonus_requested: bool = False,
 ) -> LeaveRequest:
     """Добавляет период в текущий план отпуска (черновик — переживает
     переключение вкладок/перезагрузку страницы, в отличие от состояния формы).
@@ -46,6 +68,7 @@ def create_draft(
             first.message_ru,
             {"violations": [v.__dict__ for v in violations]},
         )
+    _validate_bonus_request(db, date_from, date_to, bonus_requested)
 
     leave_type = _get_vacation_leave_type(db)
     request = LeaveRequest(
@@ -55,6 +78,7 @@ def create_draft(
         date_to=date_to,
         comment=comment,
         status=DRAFT,
+        bonus_requested=bonus_requested,
     )
     db.add(request)
     db.commit()

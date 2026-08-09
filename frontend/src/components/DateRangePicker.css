@@ -1,12 +1,26 @@
 /* Показываем все месяцы года сеткой сразу — вместо пролистывания по одному,
    чтобы длинный отпуск (например 48 дней), пересекающий несколько месяцев,
    было удобно выбирать в один клик-драг без навигации вперёд/назад. */
+/* react-day-picker переопределяет свои CSS-переменные прямо на .rdp-root
+   (см. node_modules/react-day-picker/src/style.css), поэтому наследуемое
+   значение с .year-grid-picker им перекрывается — нужно бить точно по
+   .rdp-root с более высокой специфичностью. */
+.year-grid-picker .rdp-root {
+  /* Уменьшенные размеры ячеек дня — чтобы в ряд помещалось 4 месяца, а не 3,
+     и не приходилось прокручивать страницу для выбора длинного периода. */
+  --rdp-day-width: 30px;
+  --rdp-day-height: 30px;
+  --rdp-day_button-width: 28px;
+  --rdp-day_button-height: 28px;
+  --rdp-months-gap: 1rem;
+}
+
 .year-grid-picker .rdp-months {
   max-width: none;
 }
 
 .year-grid-picker .rdp-month {
-  flex: 0 0 260px;
+  flex: 0 0 220px;
 }
 
 .year-grid-picker .rdp-month_caption {

@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.leave_request import APPROVED, LeaveRequest
+from app.models.leave_request import APPROVED, DRAFT, PENDING_APPROVAL, LeaveRequest
 from app.models.restriction_settings import DEPARTMENT_LOAD_THRESHOLDS
 from app.models.user import User
 from app.services import org_unit_service, permissions, restriction_settings_service
@@ -86,10 +86,14 @@ def get_org_load(db: Session, org_unit_id: uuid.UUID, date_from: date, date_to: 
 def get_org_leave_detail(
     db: Session, org_unit_id: uuid.UUID, date_from: date, date_to: date
 ) -> dict:
-    """Сотрудники юнита (с ролью) и их согласованные отпуска за период —
-    сырые данные для интерактивной таблицы (фильтры по роли, поиск, выбор
-    конкретных сотрудников, список отпускников по клику на день считаются
-    на фронте поверх одной этой выборки, без повторных запросов к API).
+    """Сотрудники юнита (с ролью) и их отпуска за период — сырые данные для
+    интерактивной таблицы (фильтры по роли, поиск, выбор конкретных
+    сотрудников, список отпускников по клику на день считаются на фронте
+    поверх одной этой выборки, без повторных запросов к API).
+
+    Учитываются draft/pending_approval/approved — не только согласованные:
+    руководителю нужно видеть уже выбранные и поданные, но ещё не
+    рассмотренные периоды, чтобы оценить пересечения до принятия решения.
     """
     descendant_ids = org_unit_service.descendant_ids(db, org_unit_id)
 
@@ -105,7 +109,7 @@ def get_org_leave_detail(
             db.scalars(
                 select(LeaveRequest).where(
                     LeaveRequest.user_id.in_(user_ids),
-                    LeaveRequest.status == APPROVED,
+                    LeaveRequest.status.in_((DRAFT, PENDING_APPROVAL, APPROVED)),
                     LeaveRequest.date_from <= date_to,
                     LeaveRequest.date_to >= date_from,
                 )
@@ -120,7 +124,13 @@ def get_org_leave_detail(
         for u in users
     ]
     leaves = [
-        {"user_id": r.user_id, "date_from": r.date_from, "date_to": r.date_to} for r in requests
+        {
+            "user_id": r.user_id,
+            "date_from": r.date_from,
+            "date_to": r.date_to,
+            "status": r.status,
+        }
+        for r in requests
     ]
 
     return {"org_unit_id": org_unit_id, "employees": employees, "leaves": leaves}

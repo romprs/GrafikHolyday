@@ -42,6 +42,7 @@ export function MyRequestsPage() {
             <tr key={r.id}>
               <td>
                 {r.date_from} — {r.date_to}
+                {r.bonus_requested && " 🎁"}
               </td>
               <td>{r.days}</td>
               <td>{statusLabel(r.status)}</td>

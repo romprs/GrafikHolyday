@@ -73,6 +73,7 @@ export function AllRequestsPage() {
                 <>
                   <td>
                     {r.date_from} — {r.date_to} ({r.days} дн.)
+                    {r.bonus_requested && " 🎁 доплата"}
                   </td>
                   <td>{statusLabel(r.status)}</td>
                   <td>
