@@ -75,3 +75,34 @@ def test_list_pending_for_manager(db_session, scenario):
 
     pending_other = approval_service.list_pending_for_manager(db_session, scenario["other_manager"])
     assert pending_other == []
+
+
+def test_manager_cancel_approved(db_session, scenario):
+    approval_service.approve(db_session, scenario["manager"], scenario["request"].id, None)
+    cancelled = approval_service.manager_cancel_approved(
+        db_session, scenario["manager"], scenario["request"].id, "передумали"
+    )
+    assert cancelled.status == "cancelled"
+    assert cancelled.cancelled_by == scenario["manager"].id
+
+
+def test_manager_cancel_approved_by_non_manager_forbidden(db_session, scenario):
+    approval_service.approve(db_session, scenario["manager"], scenario["request"].id, None)
+    with pytest.raises(ForbiddenError):
+        approval_service.manager_cancel_approved(
+            db_session, scenario["other_manager"], scenario["request"].id, None
+        )
+
+
+def test_manager_cancel_pending_conflict(db_session, scenario):
+    with pytest.raises(ConflictError):
+        approval_service.manager_cancel_approved(
+            db_session, scenario["manager"], scenario["request"].id, None
+        )
+
+
+def test_list_approved_for_manager(db_session, scenario):
+    approval_service.approve(db_session, scenario["manager"], scenario["request"].id, None)
+    approved = approval_service.list_approved_for_manager(db_session, scenario["manager"])
+    assert len(approved) == 1
+    assert approved[0].id == scenario["request"].id

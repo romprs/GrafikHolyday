@@ -42,6 +42,33 @@ def _validate_bonus_request(db: Session, date_from: date, date_to: date, bonus_r
         )
 
 
+def _check_no_active_submission(db: Session, user: User, year: int) -> None:
+    """Запрещает начинать новый план, пока на этот год уже есть поданная или
+    согласованная заявка — независимо от остатка баланса.
+
+    Это отдельная от баланса проверка: льготники (has_benefits) обходят
+    ограничение по остатку баланса (см. leave_balance_rule), и без этой
+    проверки могли бы бесконечно добавлять черновики поверх уже
+    согласованной заявки на тот же год.
+    """
+    year_start = date(year, 1, 1)
+    year_end = date(year, 12, 31)
+    existing = db.scalar(
+        select(LeaveRequest.id).where(
+            LeaveRequest.user_id == user.id,
+            LeaveRequest.status.in_((PENDING_APPROVAL, APPROVED)),
+            LeaveRequest.date_from <= year_end,
+            LeaveRequest.date_to >= year_start,
+        )
+    )
+    if existing is not None:
+        raise ForbiddenError(
+            "На этот год уже есть поданная или согласованная заявка. Добавить новую можно "
+            "будет после того, как текущую отменят или отклонят.",
+            {"year": year},
+        )
+
+
 def create_draft(
     db: Session,
     user: User,
@@ -61,6 +88,7 @@ def create_draft(
     статус draft наравне с pending/approved (см. модель LeaveRequest.STATUSES
     и services/validation/*_rule.py).
     """
+    _check_no_active_submission(db, user, date_from.year)
     violations = validation_engine.validate_leave_request(db, user, date_from, date_to)
     if violations:
         first = violations[0]
@@ -216,10 +244,14 @@ def list_own(db: Session, user: User) -> list[LeaveRequest]:
 
 
 def cancel(db: Session, user: User, request_id: uuid.UUID) -> LeaveRequest:
+    """Сотрудник может отменить только ещё не рассмотренную заявку. Отмена
+    уже согласованной — отдельное действие руководителя/HR (см.
+    approval_service.manager_cancel_approved), а не самого сотрудника."""
     request = get_own(db, user, request_id)
-    if request.status not in (PENDING_APPROVAL, APPROVED):
+    if request.status != PENDING_APPROVAL:
         raise ForbiddenError(
-            "Отменить можно только заявку в статусе 'на согласовании' или 'согласована'",
+            "Самостоятельно отменить можно только заявку в статусе 'на согласовании'. "
+            "Уже согласованную заявку может отменить только руководитель.",
             {"current_status": request.status},
         )
 

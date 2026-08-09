@@ -125,10 +125,12 @@ def get_org_leave_detail(
     ]
     leaves = [
         {
+            "id": r.id,
             "user_id": r.user_id,
             "date_from": r.date_from,
             "date_to": r.date_to,
             "status": r.status,
+            "submission_id": r.submission_id,
         }
         for r in requests
     ]

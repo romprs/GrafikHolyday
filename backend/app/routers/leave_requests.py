@@ -2,8 +2,10 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 
 from app.dependencies import CurrentUser, DbSession, require_role
+from app.models.leave_request import LeaveRequest
 from app.models.user import User
 from app.schemas.leave_request import (
     LeaveRequestAdminOverride,
@@ -11,6 +13,7 @@ from app.schemas.leave_request import (
     LeaveRequestCreate,
     LeaveRequestOut,
     LeaveRequestReview,
+    LeaveRequestWithEmployeeOut,
 )
 from app.services import approval_service, leave_request_service, permissions, restriction_settings_service
 
@@ -21,6 +24,20 @@ HrAdmin = Annotated[User, Depends(require_role(permissions.HR_ADMIN))]
 
 def _resolved_year(db: DbSession, year: int | None) -> int:
     return year if year is not None else restriction_settings_service.get_planning_year(db)
+
+
+def _with_employee_names(
+    db: DbSession, requests: list[LeaveRequest]
+) -> list[LeaveRequestWithEmployeeOut]:
+    user_ids = {r.user_id for r in requests}
+    names = {u.id: u.full_name for u in db.scalars(select(User).where(User.id.in_(user_ids)))}
+    return [
+        LeaveRequestWithEmployeeOut(
+            **LeaveRequestOut.model_validate(r).model_dump(),
+            user_full_name=names.get(r.user_id, "—"),
+        )
+        for r in requests
+    ]
 
 
 @router.get("/drafts", response_model=list[LeaveRequestOut])
@@ -69,9 +86,21 @@ def cancel_leave_request(
     return leave_request_service.cancel(db, user, request_id)
 
 
-@router.get("/team/pending", response_model=list[LeaveRequestOut])
-def list_pending_for_my_team(db: DbSession, user: CurrentUser) -> list[LeaveRequestOut]:
-    return approval_service.list_pending_for_manager(db, user)
+@router.get("/team/pending", response_model=list[LeaveRequestWithEmployeeOut])
+def list_pending_for_my_team(db: DbSession, user: CurrentUser) -> list[LeaveRequestWithEmployeeOut]:
+    return _with_employee_names(db, approval_service.list_pending_for_manager(db, user))
+
+
+@router.get("/team/approved", response_model=list[LeaveRequestWithEmployeeOut])
+def list_approved_for_my_team(db: DbSession, user: CurrentUser) -> list[LeaveRequestWithEmployeeOut]:
+    return _with_employee_names(db, approval_service.list_approved_for_manager(db, user))
+
+
+@router.post("/{request_id}/manager-cancel", response_model=LeaveRequestOut)
+def manager_cancel_leave_request(
+    request_id: uuid.UUID, body: LeaveRequestReview, db: DbSession, user: CurrentUser
+) -> LeaveRequestOut:
+    return approval_service.manager_cancel_approved(db, user, request_id, body.comment)
 
 
 @router.post("/{request_id}/approve", response_model=LeaveRequestOut)

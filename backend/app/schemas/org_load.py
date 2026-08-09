@@ -25,10 +25,12 @@ class OrgLoadEmployeeOut(BaseModel):
 
 
 class OrgLoadLeaveEntryOut(BaseModel):
+    id: uuid.UUID
     user_id: uuid.UUID
     date_from: date
     date_to: date
     status: str
+    submission_id: uuid.UUID | None
 
 
 class OrgLoadDetailOut(BaseModel):

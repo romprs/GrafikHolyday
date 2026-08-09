@@ -5,7 +5,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationFailedError
-from app.models.leave_request import APPROVED, PENDING_APPROVAL, REJECTED, STATUSES, LeaveRequest
+from app.models.leave_request import (
+    APPROVED,
+    CANCELLED,
+    PENDING_APPROVAL,
+    REJECTED,
+    STATUSES,
+    LeaveRequest,
+)
 from app.models.org_unit import OrgUnit
 from app.models.user import User
 from app.services import audit_service
@@ -84,6 +91,59 @@ def reject(
     request.reviewer_id = reviewer.id
     request.review_comment = review_comment
     request.reviewed_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(request)
+    return request
+
+
+def list_approved_for_manager(db: Session, manager: User) -> list[LeaveRequest]:
+    """Согласованные заявки сотрудников руководителя — чтобы он мог отменить
+    уже согласованный период (единственный, кому это доступно, кроме
+    сотрудника, который больше не может отменить сам себя после согласования
+    — см. leave_request_service.cancel)."""
+    managed_unit_ids = db.scalars(
+        select(OrgUnit.id).where(OrgUnit.head_user_id == manager.id, OrgUnit.is_active)
+    ).all()
+    if not managed_unit_ids:
+        return []
+    return list(
+        db.scalars(
+            select(LeaveRequest)
+            .join(User, User.id == LeaveRequest.user_id)
+            .where(
+                User.org_unit_id.in_(managed_unit_ids),
+                LeaveRequest.status == APPROVED,
+            )
+            .order_by(LeaveRequest.date_from)
+        ).all()
+    )
+
+
+def manager_cancel_approved(
+    db: Session, manager: User, request_id: uuid.UUID, review_comment: str | None
+) -> LeaveRequest:
+    """Отмена уже согласованной заявки руководителем прямого отдела
+    сотрудника — единственный способ отменить согласованную заявку помимо
+    HR admin-override (см. admin_override)."""
+    request = db.get(LeaveRequest, request_id)
+    if request is None:
+        raise NotFoundError("Заявка не найдена")
+
+    target = db.get(User, request.user_id)
+    if target is None or not _is_direct_manager_of(db, manager, target):
+        raise ForbiddenError("Вы не являетесь руководителем отдела этого сотрудника")
+
+    if request.status != APPROVED:
+        raise ConflictError(
+            "Отменить можно только уже согласованную заявку", {"current_status": request.status}
+        )
+
+    request.status = CANCELLED
+    request.reviewer_id = manager.id
+    request.review_comment = review_comment
+    request.reviewed_at = datetime.now(timezone.utc)
+    request.cancelled_at = datetime.now(timezone.utc)
+    request.cancelled_by = manager.id
     db.commit()
     db.refresh(request)
     return request

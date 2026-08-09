@@ -14,8 +14,12 @@ export function getBlockedRanges(dateFrom?: string, dateTo?: string): Promise<Bl
   return apiFetch<BlockedRangeOut[]>(`/calendar/blocked${query ? `?${query}` : ""}`);
 }
 
-export function getTeamCalendar(): Promise<TeamLeaveOut[]> {
-  return apiFetch<TeamLeaveOut[]>("/calendar/team");
+export function getTeamCalendar(dateFrom?: string, dateTo?: string): Promise<TeamLeaveOut[]> {
+  const params = new URLSearchParams();
+  if (dateFrom) params.set("date_from", dateFrom);
+  if (dateTo) params.set("date_to", dateTo);
+  const query = params.toString();
+  return apiFetch<TeamLeaveOut[]>(`/calendar/team${query ? `?${query}` : ""}`);
 }
 
 export function listBlockedPeriods(): Promise<BlockedPeriodOut[]> {

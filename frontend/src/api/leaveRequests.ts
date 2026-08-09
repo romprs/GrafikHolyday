@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import type { LeaveBalanceOut, LeaveRequestOut } from "./types";
+import type { LeaveBalanceOut, LeaveRequestOut, LeaveRequestWithEmployeeOut } from "./types";
 
 export function listDrafts(year?: number): Promise<LeaveRequestOut[]> {
   return apiFetch<LeaveRequestOut[]>(`/leave-requests/drafts${year ? `?year=${year}` : ""}`);
@@ -42,8 +42,19 @@ export function cancelLeaveRequest(id: string): Promise<LeaveRequestOut> {
   return apiFetch<LeaveRequestOut>(`/leave-requests/${id}/cancel`, { method: "POST" });
 }
 
-export function listPendingForTeam(): Promise<LeaveRequestOut[]> {
-  return apiFetch<LeaveRequestOut[]>("/leave-requests/team/pending");
+export function managerCancelLeaveRequest(id: string, comment?: string): Promise<LeaveRequestOut> {
+  return apiFetch<LeaveRequestOut>(`/leave-requests/${id}/manager-cancel`, {
+    method: "POST",
+    body: JSON.stringify({ comment }),
+  });
+}
+
+export function listPendingForTeam(): Promise<LeaveRequestWithEmployeeOut[]> {
+  return apiFetch<LeaveRequestWithEmployeeOut[]>("/leave-requests/team/pending");
+}
+
+export function listApprovedForTeam(): Promise<LeaveRequestWithEmployeeOut[]> {
+  return apiFetch<LeaveRequestWithEmployeeOut[]>("/leave-requests/team/approved");
 }
 
 export function approveLeaveRequest(id: string, comment?: string): Promise<LeaveRequestOut> {

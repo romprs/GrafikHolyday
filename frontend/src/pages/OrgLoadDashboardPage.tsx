@@ -1,11 +1,24 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale/ru";
 import { useMemo, useState } from "react";
+import { useAuth } from "../auth/AuthContext";
 import { apiFetch } from "../api/client";
 import { getRestrictionSettings } from "../api/calendar";
+import { approveLeaveRequest, rejectLeaveRequest } from "../api/leaveRequests";
 import { getOrgLoadDetail } from "../api/orgLoad";
-import type { EmployeeRole, LoadBand, OrgLoadEmployeeOut, OrgUnitOut } from "../api/types";
+import type {
+  EmployeeRole,
+  LoadBand,
+  OrgLoadEmployeeOut,
+  OrgLoadLeaveEntryOut,
+  OrgUnitOut,
+} from "../api/types";
+
+const statusLabel: Record<string, string> = {
+  pending_approval: "на согласовании",
+  approved: "согласовано",
+};
 
 const bandColor: Record<LoadBand, string> = {
   green: "#4caf50",
@@ -50,6 +63,9 @@ function toIso(year: number, monthIndex: number, day: number): string {
 }
 
 export function OrgLoadDashboardPage() {
+  const { currentUser } = useAuth();
+  const canApprove = currentUser?.role === "manager" || currentUser?.role === "hr_admin";
+  const queryClient = useQueryClient();
   const { data: orgUnits } = useQuery({
     queryKey: ["org-units"],
     queryFn: () => apiFetch<OrgUnitOut[]>("/org-units"),
@@ -114,10 +130,13 @@ export function OrgLoadDashboardPage() {
   const employeesById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
 
   function employeesOnLeave(dateIso: string): OrgLoadEmployeeOut[] {
-    return leavesInScope
-      .filter((l) => l.date_from <= dateIso && l.date_to >= dateIso)
+    return leavesForDay(dateIso)
       .map((l) => employeesById.get(l.user_id))
       .filter((e): e is OrgLoadEmployeeOut => !!e);
+  }
+
+  function leavesForDay(dateIso: string): OrgLoadLeaveEntryOut[] {
+    return leavesInScope.filter((l) => l.date_from <= dateIso && l.date_to >= dateIso);
   }
 
   function toggleSelected(id: string) {
@@ -129,7 +148,19 @@ export function OrgLoadDashboardPage() {
     });
   }
 
-  const clickedDayEmployees = clickedDay ? employeesOnLeave(clickedDay) : [];
+  async function handleApproveSubmission(leave: OrgLoadLeaveEntryOut) {
+    const group = leaves.filter((l) => (l.submission_id ?? l.id) === (leave.submission_id ?? leave.id));
+    await Promise.all(group.map((l) => approveLeaveRequest(l.id)));
+    queryClient.invalidateQueries({ queryKey: ["org-load-detail", unitId] });
+  }
+
+  async function handleRejectSubmission(leave: OrgLoadLeaveEntryOut) {
+    const group = leaves.filter((l) => (l.submission_id ?? l.id) === (leave.submission_id ?? leave.id));
+    await Promise.all(group.map((l) => rejectLeaveRequest(l.id)));
+    queryClient.invalidateQueries({ queryKey: ["org-load-detail", unitId] });
+  }
+
+  const clickedDayLeaves = clickedDay ? leavesForDay(clickedDay) : [];
 
   return (
     <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
@@ -328,10 +359,25 @@ export function OrgLoadDashboardPage() {
         >
           <strong>{clickedDay}</strong>
           <ul style={{ margin: "4px 0 0 0", paddingLeft: 20 }}>
-            {clickedDayEmployees.map((e) => (
-              <li key={e.id}>{e.full_name}</li>
-            ))}
-            {clickedDayEmployees.length === 0 && <li>Никто не в отпуске</li>}
+            {clickedDayLeaves.map((l) => {
+              const employee = employeesById.get(l.user_id);
+              return (
+                <li key={l.id} style={{ marginBottom: 6 }}>
+                  {employee?.full_name ?? "—"}
+                  {" — "}
+                  <span style={{ color: l.status === "approved" ? "#2e7d32" : "#a06a00" }}>
+                    {statusLabel[l.status] ?? l.status}
+                  </span>
+                  {canApprove && l.status === "pending_approval" && (
+                    <div style={{ marginTop: 2 }}>
+                      <button onClick={() => handleApproveSubmission(l)}>Согласовать</button>{" "}
+                      <button onClick={() => handleRejectSubmission(l)}>Отклонить</button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+            {clickedDayLeaves.length === 0 && <li>Никто не в отпуске</li>}
           </ul>
           <button onClick={() => setClickedDay(null)}>Закрыть</button>
         </div>

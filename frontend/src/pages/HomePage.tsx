@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
+import { getRestrictionSettings } from "../api/calendar";
+import { listMyLeaveRequests } from "../api/leaveRequests";
 import { AllRequestsPage } from "./AllRequestsPage";
 import { ApprovalQueuePage } from "./ApprovalQueuePage";
 import { AuditLogPage } from "./AuditLogPage";
@@ -36,6 +39,39 @@ export function HomePage() {
   const { currentUser, logout } = useAuth();
   const [tab, setTab] = useState<Tab>("my-requests");
 
+  const { data: restrictionSettings } = useQuery({
+    queryKey: ["restriction-settings"],
+    queryFn: getRestrictionSettings,
+    enabled: !!currentUser,
+  });
+  const { data: myRequests } = useQuery({
+    queryKey: ["my-leave-requests"],
+    queryFn: listMyLeaveRequests,
+    enabled: !!currentUser,
+  });
+
+  const planningYearSetting = restrictionSettings?.find((s) => s.key === "planning_year");
+  const planningYear =
+    typeof planningYearSetting?.params.year === "number"
+      ? planningYearSetting.params.year
+      : new Date().getFullYear();
+
+  // Пока есть поданная или согласованная заявка на плановый год — новую
+  // начинать нельзя (см. leave_request_service._check_no_active_submission),
+  // поэтому вкладку скрываем совсем, а не просто блокируем форму внутри.
+  const hasActiveSubmissionThisYear = (myRequests ?? []).some(
+    (r) =>
+      (r.status === "pending_approval" || r.status === "approved") &&
+      new Date(r.date_from).getFullYear() <= planningYear &&
+      new Date(r.date_to).getFullYear() >= planningYear,
+  );
+
+  useEffect(() => {
+    if (tab === "new-request" && hasActiveSubmissionThisYear) {
+      setTab("my-requests");
+    }
+  }, [tab, hasActiveSubmissionThisYear]);
+
   if (!currentUser) return null;
 
   const isManagerOrHr = currentUser.role !== "employee";
@@ -43,7 +79,7 @@ export function HomePage() {
 
   const tabs: { id: Tab; label: string; visible: boolean }[] = [
     { id: "my-requests", label: "Мои заявки", visible: true },
-    { id: "new-request", label: "Новая заявка", visible: true },
+    { id: "new-request", label: "Новая заявка", visible: !hasActiveSubmissionThisYear },
     { id: "approvals", label: "Согласование", visible: isManagerOrHr },
     { id: "team-calendar", label: "Календарь отдела", visible: true },
     { id: "blocked-periods", label: "Недоступные периоды", visible: isManagerOrHr },

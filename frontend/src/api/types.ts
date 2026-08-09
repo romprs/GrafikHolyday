@@ -44,6 +44,10 @@ export interface LeaveRequestOut {
   days: number;
 }
 
+export interface LeaveRequestWithEmployeeOut extends LeaveRequestOut {
+  user_full_name: string;
+}
+
 export interface LeaveBalanceOut {
   year: number;
   accrued_days: number;
@@ -111,9 +115,12 @@ export interface OrgLoadEmployeeOut {
 }
 
 export interface OrgLoadLeaveEntryOut {
+  id: string;
   user_id: string;
   date_from: string;
   date_to: string;
+  status: LeaveRequestStatus;
+  submission_id: string | null;
 }
 
 export interface OrgLoadDetailOut {

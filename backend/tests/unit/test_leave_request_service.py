@@ -92,13 +92,17 @@ def test_cancel_from_pending_approval(db_session, vacation_type, min_duration_se
     assert cancelled.cancelled_by == balance_7.id
 
 
-def test_cancel_from_approved(db_session, vacation_type, min_duration_setting, balance_7):
+def test_cancel_from_approved_forbidden_for_employee(
+    db_session, vacation_type, min_duration_setting, balance_7
+):
+    # Сотрудник больше не может сам отменить уже согласованную заявку — это
+    # действие руководителя (см. approval_service.manager_cancel_approved).
     request = submit_one(db_session, balance_7, date(2026, 6, 1), date(2026, 6, 7))
     request.status = APPROVED
     db_session.flush()
 
-    cancelled = leave_request_service.cancel(db_session, balance_7, request.id)
-    assert cancelled.status == CANCELLED
+    with pytest.raises(ForbiddenError):
+        leave_request_service.cancel(db_session, balance_7, request.id)
 
 
 def test_cancel_rejected_forbidden(db_session, vacation_type, min_duration_setting, balance_7):
@@ -108,3 +112,26 @@ def test_cancel_rejected_forbidden(db_session, vacation_type, min_duration_setti
 
     with pytest.raises(ForbiddenError):
         leave_request_service.cancel(db_session, balance_7, request.id)
+
+
+def test_create_draft_rejects_when_active_submission_exists(
+    db_session, vacation_type, min_duration_setting, balance_7
+):
+    submit_one(db_session, balance_7, date(2026, 6, 1), date(2026, 6, 7))
+    with pytest.raises(ForbiddenError):
+        leave_request_service.create_draft(
+            db_session, balance_7, date(2026, 9, 1), date(2026, 9, 7), None
+        )
+
+
+def test_create_draft_allowed_after_rejection(
+    db_session, vacation_type, min_duration_setting, balance_7
+):
+    request = submit_one(db_session, balance_7, date(2026, 6, 1), date(2026, 6, 7))
+    request.status = REJECTED
+    db_session.flush()
+
+    new_draft = leave_request_service.create_draft(
+        db_session, balance_7, date(2026, 9, 1), date(2026, 9, 7), None
+    )
+    assert new_draft.status == DRAFT

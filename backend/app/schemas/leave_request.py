@@ -45,6 +45,13 @@ class LeaveRequestOut(BaseModel):
     days: int
 
 
+class LeaveRequestWithEmployeeOut(LeaveRequestOut):
+    """LeaveRequestOut + ФИО сотрудника — для очереди согласования и списка
+    согласованных заявок, где руководителю нужно видеть, чья это заявка."""
+
+    user_full_name: str
+
+
 class LeaveBalanceOut(BaseModel):
     year: int
     accrued_days: float
