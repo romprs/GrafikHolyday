@@ -67,6 +67,12 @@ export function DateRangePicker({
     <div>
       <div className="year-grid-picker">
         <DayPicker
+          // defaultMonth ниже — неконтролируемый проп react-day-picker,
+          // учитывается только при монтировании. Без key={year} календарь,
+          // однажды смонтированный до загрузки планового года с бэка,
+          // "застревал" бы на запасном годе и не переключался на реальный
+          // плановый год, когда настройки приходят чуть позже.
+          key={year}
           mode="range"
           locale={ru}
           selected={range}
