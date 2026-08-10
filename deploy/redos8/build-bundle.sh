@@ -62,6 +62,7 @@ cp "$ROOT_DIR/deploy/redos8/install.sh" "$BUNDLE_DIR/"
 cp "$ROOT_DIR/deploy/redos8/nginx-vacation.conf" "$BUNDLE_DIR/"
 cp "$ROOT_DIR/deploy/redos8/vacation-backend.service" "$BUNDLE_DIR/"
 cp "$ROOT_DIR/deploy/redos8/.env.example" "$BUNDLE_DIR/"
+cp "$ROOT_DIR/deploy/redos8/README.md" "$BUNDLE_DIR/"
 chmod +x "$BUNDLE_DIR/install.sh"
 
 OUT_FILE="$OUT_DIR/vacation-planner-offline-bundle-$STAMP.tar.gz"

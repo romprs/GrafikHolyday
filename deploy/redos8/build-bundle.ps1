@@ -91,6 +91,7 @@ try {
     Copy-Item (Join-Path $PSScriptRoot "nginx-vacation.conf") $BundleDir
     Copy-Item (Join-Path $PSScriptRoot "vacation-backend.service") $BundleDir
     Copy-Item (Join-Path $PSScriptRoot ".env.example") $BundleDir
+    Copy-Item (Join-Path $PSScriptRoot "README.md") $BundleDir
 
     $OutFile = Join-Path $OutDir "vacation-planner-offline-bundle-$Stamp.tar.gz"
     Push-Location $BundleDir
