@@ -32,6 +32,10 @@ echo "==> [2/5] Скачиваю wheel-пакеты бэкенда (Linux x86_64
 mkdir -p "$BUNDLE_DIR/wheelhouse"
 (
   cd "$ROOT_DIR/backend"
+  # uvloop is requested explicitly: uvicorn[standard] only pulls it in via a
+  # `sys_platform != "win32"` marker, and `pip download --platform` does NOT
+  # override marker evaluation (only wheel tags) - if this runs on a non-Linux
+  # dev machine that marker would be false and uvloop silently skipped.
   python3 -m pip download -d "$BUNDLE_DIR/wheelhouse" \
     --platform manylinux_2_28_x86_64 \
     --platform manylinux2014_x86_64 \
@@ -39,7 +43,7 @@ mkdir -p "$BUNDLE_DIR/wheelhouse"
     --implementation cp \
     --abi cp311 \
     --only-binary=:all: \
-    "pip" "setuptools>=68" "wheel" ".[dev]"
+    "pip" "setuptools>=68" "wheel" "uvloop>=0.15.1" ".[dev]"
 )
 
 echo "==> [3/5] Собираю фронтенд (статика, npm нужен только здесь, не на РЕД ОС)"

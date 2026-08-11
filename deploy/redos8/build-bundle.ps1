@@ -63,6 +63,10 @@ try {
     New-Item -ItemType Directory -Force -Path $WheelhouseDir | Out-Null
     Push-Location (Join-Path $RootDir "backend")
     try {
+        # uvloop is requested explicitly: uvicorn[standard] only pulls it in
+        # via a `sys_platform != "win32"` marker, and `pip download --platform`
+        # does NOT override marker evaluation (only wheel tags) - on Windows
+        # that marker is false, so it would silently be skipped otherwise.
         & python -m pip download -d $WheelhouseDir `
             --platform manylinux_2_28_x86_64 `
             --platform manylinux2014_x86_64 `
@@ -70,7 +74,7 @@ try {
             --implementation cp `
             --abi cp311 `
             --only-binary=:all: `
-            "pip" "setuptools>=68" "wheel" ".[dev]"
+            "pip" "setuptools>=68" "wheel" "uvloop>=0.15.1" ".[dev]"
         if ($LASTEXITCODE -ne 0) { throw "pip download failed" }
     } finally {
         Pop-Location
