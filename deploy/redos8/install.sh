@@ -46,9 +46,9 @@ echo "==> [1/7] Распаковываю portable Python 3.11"
 if [[ ! -x "$INSTALL_DIR/python/bin/python3.11" ]]; then
     tar -xzf "$BUNDLE_DIR/python-standalone.tar.gz" -C "$INSTALL_DIR"
 fi
-PYTHON_BIN="$(find "$INSTALL_DIR/python/bin" -maxdepth 1 -name 'python3.11*' -type f | head -n1)"
-if [[ -z "$PYTHON_BIN" ]]; then
-    echo "Не нашёл python3.11 в $INSTALL_DIR/python/bin — проверьте архив python-standalone.tar.gz" >&2
+PYTHON_BIN="$INSTALL_DIR/python/bin/python3.11"
+if [[ ! -x "$PYTHON_BIN" ]]; then
+    echo "Не нашёл $PYTHON_BIN — проверьте архив python-standalone.tar.gz" >&2
     exit 1
 fi
 
