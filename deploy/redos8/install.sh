@@ -24,6 +24,14 @@ for f in python-standalone.tar.gz wheelhouse frontend-dist app nginx-vacation.co
     fi
 done
 
+# Бандл мог быть собран на Windows и содержать CRLF (\r\n) в текстовых
+# файлах — тихо ломает значения в .env (например, DATABASE_URL) и конфиги.
+# Приводим к LF перед использованием.
+sed -i 's/\r$//' \
+    "$BUNDLE_DIR/nginx-vacation.conf" \
+    "$BUNDLE_DIR/vacation-backend.service" \
+    "$BUNDLE_DIR/.env.example"
+
 echo "==> Каталог установки: $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
 
