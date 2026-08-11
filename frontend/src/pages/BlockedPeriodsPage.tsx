@@ -6,7 +6,7 @@ import {
   deleteBlockedPeriod,
   listBlockedPeriods,
 } from "../api/calendar";
-import type { BlockedPeriodScope, OrgUnitOut } from "../api/types";
+import type { BlockedPeriodScope, OrgUnitEmployeeOut, OrgUnitOut } from "../api/types";
 
 export function BlockedPeriodsPage() {
   const queryClient = useQueryClient();
@@ -18,12 +18,19 @@ export function BlockedPeriodsPage() {
     queryKey: ["org-units"],
     queryFn: () => apiFetch<OrgUnitOut[]>("/org-units"),
   });
+  const { data: employees } = useQuery({
+    queryKey: ["org-unit-employees"],
+    queryFn: () => apiFetch<OrgUnitEmployeeOut[]>("/org-units/employees"),
+  });
+  const employeeName = (id: string) =>
+    employees?.find((e) => e.id === id)?.full_name ?? id;
 
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [reason, setReason] = useState("");
   const [scope, setScope] = useState<BlockedPeriodScope>("org_unit");
   const [orgUnitId, setOrgUnitId] = useState("");
+  const [userId, setUserId] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   async function handleCreate(e: React.FormEvent) {
@@ -36,6 +43,7 @@ export function BlockedPeriodsPage() {
         reason,
         scope,
         org_unit_id: scope === "org_unit" ? orgUnitId : null,
+        user_id: scope === "user" ? userId : null,
       });
       setDateFrom("");
       setDateTo("");
@@ -96,6 +104,7 @@ export function BlockedPeriodsPage() {
             style={{ display: "block" }}
           >
             <option value="org_unit">Подразделение</option>
+            <option value="user">Сотрудник</option>
             <option value="global">Вся компания (HR/админ)</option>
           </select>
         </label>
@@ -114,6 +123,26 @@ export function BlockedPeriodsPage() {
               {orgUnits?.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {scope === "user" && (
+          <label>
+            Сотрудник
+            <select
+              value={userId}
+              onChange={(e) => setUserId(e.target.value)}
+              required
+              style={{ display: "block" }}
+            >
+              <option value="" disabled>
+                — выберите —
+              </option>
+              {employees?.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.full_name} ({e.email})
                 </option>
               ))}
             </select>
@@ -139,7 +168,11 @@ export function BlockedPeriodsPage() {
                 {b.date_from} — {b.date_to}
               </td>
               <td>{b.reason}</td>
-              <td>{b.scope === "global" ? "Вся компания" : "Подразделение"}</td>
+              <td>
+                {b.scope === "global" && "Вся компания"}
+                {b.scope === "org_unit" && "Подразделение"}
+                {b.scope === "user" && `Сотрудник: ${employeeName(b.user_id ?? "")}`}
+              </td>
               <td>
                 <button onClick={() => handleDelete(b.id)}>Удалить</button>
               </td>

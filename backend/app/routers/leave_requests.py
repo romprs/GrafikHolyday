@@ -79,10 +79,10 @@ def list_all_leave_requests(db: DbSession, _: HrAdmin) -> list[LeaveRequestOut]:
     return approval_service.list_all(db)
 
 
-@router.post("/{request_id}/cancel", response_model=LeaveRequestOut)
+@router.post("/{request_id}/cancel", response_model=list[LeaveRequestOut])
 def cancel_leave_request(
     request_id: uuid.UUID, db: DbSession, user: CurrentUser
-) -> LeaveRequestOut:
+) -> list[LeaveRequestOut]:
     return leave_request_service.cancel(db, user, request_id)
 
 

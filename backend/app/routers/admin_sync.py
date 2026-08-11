@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 
 from app.dependencies import DbSession, require_role
-from app.models.sync import SyncRun
+from app.models.sync import KIND_ORG_DIRECTORY, SyncRun
 from app.models.user import User
 from app.schemas.sync import SyncRunOut
 from app.services import permissions, sync_service
@@ -25,4 +25,10 @@ def trigger_sync(db: DbSession, user: HrAdmin) -> SyncRunOut:
 
 @router.get("/runs", response_model=list[SyncRunOut])
 def list_sync_runs(db: DbSession, _: HrAdmin) -> list[SyncRunOut]:
-    return list(db.scalars(select(SyncRun).order_by(SyncRun.started_at.desc())).all())
+    return list(
+        db.scalars(
+            select(SyncRun)
+            .where(SyncRun.kind == KIND_ORG_DIRECTORY)
+            .order_by(SyncRun.started_at.desc())
+        ).all()
+    )

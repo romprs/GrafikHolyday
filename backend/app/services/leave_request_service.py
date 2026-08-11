@@ -26,7 +26,14 @@ def _get_vacation_leave_type(db: Session) -> LeaveType:
     return leave_type
 
 
-def _validate_bonus_request(db: Session, date_from: date, date_to: date, bonus_requested: bool) -> None:
+def _validate_bonus_request(
+    db: Session,
+    user: User,
+    date_from: date,
+    date_to: date,
+    bonus_requested: bool,
+    exclude_request_id: uuid.UUID | None = None,
+) -> None:
     if not bonus_requested:
         return
     setting = restriction_settings_service.get(db, VACATION_BONUS)
@@ -34,11 +41,32 @@ def _validate_bonus_request(db: Session, date_from: date, date_to: date, bonus_r
         raise ValidationFailedError("Программа дополнительной выплаты к отпуску сейчас отключена")
     min_days = setting.params.get("min_days", 14)
     days = (date_to - date_from).days + 1
-    if days <= min_days:
+    if days < min_days:
         raise ValidationFailedError(
-            f"Дополнительную выплату можно запросить только к отпуску длительностью более "
+            f"Дополнительную выплату можно запросить только к отпуску длительностью от "
             f"{min_days} дн. (выбрано {days} дн.)",
             {"selected_days": days, "min_days": min_days},
+        )
+
+    # Доплата — только к одному периоду плана на год, не к каждому периоду
+    # длиннее порога (иначе за один план можно было бы получить доплату
+    # несколько раз). PENDING_APPROVAL/APPROVED тут не проверяем: пока на год
+    # есть поданная/согласованная заявка, добавить новый черновик и так
+    # нельзя (см. _check_no_active_submission) — единственное реальное
+    # пересечение с другим отмеченным периодом возможно среди черновиков.
+    other_bonus_draft = select(LeaveRequest.id).where(
+        LeaveRequest.user_id == user.id,
+        LeaveRequest.status == DRAFT,
+        LeaveRequest.bonus_requested,
+        LeaveRequest.date_from <= date(date_from.year, 12, 31),
+        LeaveRequest.date_to >= date(date_from.year, 1, 1),
+    )
+    if exclude_request_id is not None:
+        other_bonus_draft = other_bonus_draft.where(LeaveRequest.id != exclude_request_id)
+    if db.scalar(other_bonus_draft) is not None:
+        raise ValidationFailedError(
+            "Доплату можно запросить только для одного периода в плане на год — сначала "
+            "снимите отметку с другого периода."
         )
 
 
@@ -96,7 +124,7 @@ def create_draft(
             first.message_ru,
             {"violations": [v.__dict__ for v in violations]},
         )
-    _validate_bonus_request(db, date_from, date_to, bonus_requested)
+    _validate_bonus_request(db, user, date_from, date_to, bonus_requested)
 
     leave_type = _get_vacation_leave_type(db)
     request = LeaveRequest(
@@ -131,7 +159,9 @@ def update_draft_bonus(
         raise ForbiddenError(
             "Изменить можно только ещё не отправленный период", {"current_status": request.status}
         )
-    _validate_bonus_request(db, request.date_from, request.date_to, bonus_requested)
+    _validate_bonus_request(
+        db, user, request.date_from, request.date_to, bonus_requested, exclude_request_id=request.id
+    )
     request.bonus_requested = bonus_requested
     db.commit()
     db.refresh(request)
@@ -243,9 +273,11 @@ def list_own(db: Session, user: User) -> list[LeaveRequest]:
     )
 
 
-def cancel(db: Session, user: User, request_id: uuid.UUID) -> LeaveRequest:
-    """Сотрудник может отменить только ещё не рассмотренную заявку. Отмена
-    уже согласованной — отдельное действие руководителя/HR (см.
+def cancel(db: Session, user: User, request_id: uuid.UUID) -> list[LeaveRequest]:
+    """Сотрудник может отменить только ещё не рассмотренную заявку — и
+    заявку целиком (все периоды с тем же submission_id), а не один период
+    из неё, иначе план на год останется в смешанном/нецелостном состоянии.
+    Отмена уже согласованной — отдельное действие руководителя/HR (см.
     approval_service.manager_cancel_approved), а не самого сотрудника."""
     request = get_own(db, user, request_id)
     if request.status != PENDING_APPROVAL:
@@ -255,9 +287,24 @@ def cancel(db: Session, user: User, request_id: uuid.UUID) -> LeaveRequest:
             {"current_status": request.status},
         )
 
-    request.status = CANCELLED
-    request.cancelled_at = datetime.now(timezone.utc)
-    request.cancelled_by = user.id
+    if request.submission_id is None:
+        requests = [request]
+    else:
+        requests = list(
+            db.scalars(
+                select(LeaveRequest).where(
+                    LeaveRequest.submission_id == request.submission_id,
+                    LeaveRequest.status == PENDING_APPROVAL,
+                )
+            ).all()
+        )
+
+    now = datetime.now(timezone.utc)
+    for r in requests:
+        r.status = CANCELLED
+        r.cancelled_at = now
+        r.cancelled_by = user.id
     db.commit()
-    db.refresh(request)
-    return request
+    for r in requests:
+        db.refresh(r)
+    return requests

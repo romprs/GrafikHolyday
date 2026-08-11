@@ -11,3 +11,8 @@ class UserWithRoleOut(BaseModel):
     has_benefits: bool
     is_active: bool
     role: str
+    employee_code: str | None = None
+
+
+class EmployeeCodeIn(BaseModel):
+    employee_code: str | None = None

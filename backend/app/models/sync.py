@@ -12,6 +12,12 @@ _JSON_TYPE = JSON().with_variant(JSONB, "postgresql")
 TRIGGER_TYPES = ("scheduled", "manual")
 RUN_STATUSES = ("running", "success", "failed", "partial")
 CHANGE_TYPES = ("created", "updated", "deactivated", "unchanged")
+# Какая интеграция породила запуск — таблица общая для всех синков (см.
+# entity_type у SyncChangeLog), поэтому нужен явный дискриминатор, иначе
+# история одной интеграции засоряется чужими запусками.
+KIND_ORG_DIRECTORY = "org_directory"
+KIND_STUDY_PERIODS = "study_periods"
+SYNC_KINDS = (KIND_ORG_DIRECTORY, KIND_STUDY_PERIODS)
 
 
 class SyncRun(UUIDPKMixin, Base):
@@ -23,12 +29,16 @@ class SyncRun(UUIDPKMixin, Base):
         CheckConstraint(
             "status IN ('running', 'success', 'failed', 'partial')", name="ck_sync_runs_status"
         ),
+        CheckConstraint(
+            "kind IN ('org_directory', 'study_periods')", name="ck_sync_runs_kind"
+        ),
     )
 
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    kind: Mapped[str] = mapped_column(String, nullable=False, default=KIND_ORG_DIRECTORY)
     trigger_type: Mapped[str] = mapped_column(String, nullable=False)
     triggered_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True

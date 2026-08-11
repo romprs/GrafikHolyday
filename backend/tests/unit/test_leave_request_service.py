@@ -88,8 +88,9 @@ def test_submit_drafts_rejects_partial_balance(db_session, vacation_type, min_du
 def test_cancel_from_pending_approval(db_session, vacation_type, min_duration_setting, balance_7):
     request = submit_one(db_session, balance_7, date(2026, 6, 1), date(2026, 6, 7))
     cancelled = leave_request_service.cancel(db_session, balance_7, request.id)
-    assert cancelled.status == CANCELLED
-    assert cancelled.cancelled_by == balance_7.id
+    assert len(cancelled) == 1
+    assert cancelled[0].status == CANCELLED
+    assert cancelled[0].cancelled_by == balance_7.id
 
 
 def test_cancel_from_approved_forbidden_for_employee(

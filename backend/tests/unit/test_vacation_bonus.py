@@ -44,12 +44,20 @@ def test_bonus_requested_for_short_period_rejected(db_session, employee, bonus_s
         )
 
 
-def test_bonus_requested_exactly_at_threshold_rejected(db_session, employee, bonus_setting):
-    # "более 14" — ровно 14 не считается, порог строго больше
+def test_bonus_requested_below_threshold_rejected(db_session, employee, bonus_setting):
+    # "14 и более" — 13 дней ещё не считается
     with pytest.raises(ValidationFailedError):
         leave_request_service.create_draft(
-            db_session, employee, date(2026, 6, 1), date(2026, 6, 14), None, bonus_requested=True
+            db_session, employee, date(2026, 6, 1), date(2026, 6, 13), None, bonus_requested=True
         )
+
+
+def test_bonus_requested_exactly_at_threshold_succeeds(db_session, employee, bonus_setting):
+    # "14 и более" — ровно 14 уже считается
+    request = leave_request_service.create_draft(
+        db_session, employee, date(2026, 6, 1), date(2026, 6, 14), None, bonus_requested=True
+    )
+    assert request.bonus_requested is True
 
 
 def test_bonus_requested_when_program_disabled_rejected(db_session, employee):
@@ -99,3 +107,34 @@ def test_update_draft_bonus_rejects_non_draft(db_session, employee, bonus_settin
     db_session.refresh(request)
     with pytest.raises(ForbiddenError):
         leave_request_service.update_draft_bonus(db_session, employee, request.id, True)
+
+
+def test_bonus_only_on_one_period_per_plan(db_session, employee, bonus_setting):
+    first = leave_request_service.create_draft(
+        db_session, employee, date(2026, 2, 1), date(2026, 2, 20), None, bonus_requested=True
+    )
+    assert first.bonus_requested is True
+
+    with pytest.raises(ValidationFailedError):
+        leave_request_service.create_draft(
+            db_session, employee, date(2026, 6, 1), date(2026, 6, 20), None, bonus_requested=True
+        )
+
+
+def test_update_draft_bonus_rejects_second_period_while_first_marked(
+    db_session, employee, bonus_setting
+):
+    first = leave_request_service.create_draft(
+        db_session, employee, date(2026, 2, 1), date(2026, 2, 20), None, bonus_requested=True
+    )
+    second = leave_request_service.create_draft(
+        db_session, employee, date(2026, 6, 1), date(2026, 6, 20), None
+    )
+
+    with pytest.raises(ValidationFailedError):
+        leave_request_service.update_draft_bonus(db_session, employee, second.id, True)
+
+    # Снять с первого — и второй становится доступен.
+    leave_request_service.update_draft_bonus(db_session, employee, first.id, False)
+    updated = leave_request_service.update_draft_bonus(db_session, employee, second.id, True)
+    assert updated.bonus_requested is True

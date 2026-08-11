@@ -38,8 +38,8 @@ export function listMyLeaveRequests(): Promise<LeaveRequestOut[]> {
   return apiFetch<LeaveRequestOut[]>("/leave-requests/mine");
 }
 
-export function cancelLeaveRequest(id: string): Promise<LeaveRequestOut> {
-  return apiFetch<LeaveRequestOut>(`/leave-requests/${id}/cancel`, { method: "POST" });
+export function cancelLeaveRequest(id: string): Promise<LeaveRequestOut[]> {
+  return apiFetch<LeaveRequestOut[]>(`/leave-requests/${id}/cancel`, { method: "POST" });
 }
 
 export function managerCancelLeaveRequest(id: string, comment?: string): Promise<LeaveRequestOut[]> {

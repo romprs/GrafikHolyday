@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.routers import (
+    admin_study_periods,
     admin_sync,
     admin_users,
     audit,
@@ -42,6 +43,7 @@ app.include_router(admin_sync.router)
 app.include_router(org_load.router)
 app.include_router(audit.router)
 app.include_router(admin_users.router)
+app.include_router(admin_study_periods.router)
 
 
 @app.get("/health")

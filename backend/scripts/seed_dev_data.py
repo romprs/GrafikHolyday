@@ -23,6 +23,7 @@ from app.models.restriction_settings import (
     OWN_OVERLAP_CHECK,
     PLANNING_YEAR,
     RestrictionSettings,
+    STUDY_PERIODS_SOURCE,
     VACATION_BONUS,
 )
 from app.models.user import User
@@ -145,6 +146,18 @@ def seed() -> None:
                     "oidc_redirect_uri": "",
                 },
                 "Настройки авторизации (dev-режим или OIDC)",
+            ),
+            (
+                STUDY_PERIODS_SOURCE,
+                False,
+                {
+                    "mode": "file",
+                    "base_url": "",
+                    "auth_login": "",
+                    "auth_password": "",
+                    "verify_tls": False,
+                },
+                "Источник учебных планов (недоступные периоды сотрудников)",
             ),
         )
         for key, enabled, params, description in default_settings:

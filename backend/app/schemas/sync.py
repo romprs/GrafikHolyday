@@ -10,6 +10,7 @@ class SyncRunOut(BaseModel):
     id: uuid.UUID
     started_at: datetime
     finished_at: datetime | None
+    kind: str
     trigger_type: str
     triggered_by: uuid.UUID | None
     status: str

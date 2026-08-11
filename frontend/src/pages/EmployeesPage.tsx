@@ -1,8 +1,39 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { getUserBalance, listUsersWithRoles, setUserBalance } from "../api/admin";
+import { getUserBalance, listUsersWithRoles, setEmployeeCode, setUserBalance } from "../api/admin";
 import { getRestrictionSettings } from "../api/calendar";
 import { ApiError } from "../api/client";
+
+function EmployeeCodeEditor({ userId, employeeCode }: { userId: string; employeeCode: string | null }) {
+  const queryClient = useQueryClient();
+  const [value, setValue] = useState(employeeCode ?? "");
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    setError(null);
+    try {
+      await setEmployeeCode(userId, value.trim() || null);
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Не удалось сохранить");
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        style={{ width: 90 }}
+      />
+      <button onClick={handleSave} disabled={value.trim() === (employeeCode ?? "")}>
+        Сохранить
+      </button>
+      {error && <span style={{ color: "crimson", fontSize: "0.85em" }}>{error}</span>}
+    </div>
+  );
+}
 
 function BalanceEditor({ userId, year }: { userId: string; year: number }) {
   const queryClient = useQueryClient();
@@ -89,6 +120,7 @@ export function EmployeesPage() {
         <thead>
           <tr>
             <th style={{ textAlign: "left" }}>Сотрудник</th>
+            <th style={{ textAlign: "left" }}>Табельный номер</th>
             <th style={{ textAlign: "left" }}>Баланс на {year} год</th>
           </tr>
         </thead>
@@ -99,6 +131,9 @@ export function EmployeesPage() {
               <tr key={u.id}>
                 <td>
                   {u.full_name} ({u.email})
+                </td>
+                <td>
+                  <EmployeeCodeEditor userId={u.id} employeeCode={u.employee_code} />
                 </td>
                 <td>
                   <BalanceEditor userId={u.id} year={year} />

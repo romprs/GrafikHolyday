@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models.external_id_mapping import ExternalIdMapping
 from app.models.org_unit import OrgUnit
-from app.models.sync import SyncChangeLog, SyncRun
+from app.models.sync import KIND_ORG_DIRECTORY, SyncChangeLog, SyncRun
 from app.models.user import User
 from app.sync.dto import ExternalOrgUnitDTO, ExternalUserDTO
 from app.sync.interface import ExternalDirectoryClient
@@ -61,7 +61,9 @@ def run_sync(
     trigger_type: str,
     triggered_by: uuid.UUID | None,
 ) -> SyncRun:
-    run = SyncRun(trigger_type=trigger_type, triggered_by=triggered_by, status="running")
+    run = SyncRun(
+        kind=KIND_ORG_DIRECTORY, trigger_type=trigger_type, triggered_by=triggered_by, status="running"
+    )
     db.add(run)
     db.flush()
 

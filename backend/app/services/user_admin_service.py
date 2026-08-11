@@ -29,6 +29,25 @@ def grant_role(db: Session, actor: User, user_id: uuid.UUID, role: str) -> None:
         db.commit()
 
 
+def set_employee_code(db: Session, user_id: uuid.UUID, employee_code: str | None) -> User:
+    target = db.get(User, user_id)
+    if target is None:
+        raise NotFoundError("Пользователь не найден")
+
+    code = employee_code.strip() if employee_code else None
+    code = code or None
+    if code:
+        clash = db.scalar(select(User).where(User.employee_code == code, User.id != target.id))
+        if clash is not None:
+            raise ValidationFailedError(
+                "Табельный номер уже используется другим сотрудником", {"employee_code": code}
+            )
+    target.employee_code = code
+    db.commit()
+    db.refresh(target)
+    return target
+
+
 def revoke_role(db: Session, actor: User, user_id: uuid.UUID, role: str) -> None:
     if role not in LOCAL_ROLES:
         raise ValidationFailedError("Эту роль нельзя отозвать вручную", {"role": role})

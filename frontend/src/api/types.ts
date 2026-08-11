@@ -143,12 +143,23 @@ export interface SyncRunOut {
   id: string;
   started_at: string;
   finished_at: string | null;
+  kind: "org_directory" | "study_periods";
   trigger_type: "scheduled" | "manual";
   triggered_by: string | null;
   status: SyncRunStatus;
   summary: {
     org_units?: { created: number; updated: number; unchanged: number };
     users?: { created: number; updated: number; unchanged: number };
+    entries_received?: number;
+    employees_matched?: number;
+    employees_unmatched?: number;
+    employees_failed?: number;
+    periods_created?: number;
+    periods_updated?: number;
+    periods_unchanged?: number;
+    periods_deactivated?: number;
+    errors?: string[];
+    unmatched_employee_codes?: string[];
   };
   error_message: string | null;
 }
@@ -173,4 +184,5 @@ export interface UserWithRoleOut {
   has_benefits: boolean;
   is_active: boolean;
   role: "employee" | "manager" | "hr_admin";
+  employee_code: string | null;
 }

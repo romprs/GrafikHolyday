@@ -13,6 +13,29 @@ function toMatchers(requests: LeaveRequestOut[]): Matcher[] {
   return requests.map((r) => ({ from: parseISO(r.date_from), to: parseISO(r.date_to) }));
 }
 
+interface Submission {
+  key: string;
+  requests: LeaveRequestOut[];
+  totalDays: number;
+}
+
+function groupBySubmission(requests: LeaveRequestOut[]): Submission[] {
+  const groups = new Map<string, LeaveRequestOut[]>();
+  for (const r of requests) {
+    // submission_id может быть пустым у заявок, созданных до появления
+    // группировки — тогда такая заявка просто образует группу из одного периода.
+    const key = r.submission_id ?? r.id;
+    const list = groups.get(key) ?? [];
+    list.push(r);
+    groups.set(key, list);
+  }
+  return Array.from(groups.entries()).map(([key, group]) => ({
+    key,
+    requests: group.sort((a, b) => a.date_from.localeCompare(b.date_from)),
+    totalDays: group.reduce((sum, r) => sum + r.days, 0),
+  }));
+}
+
 export function MyRequestsPage() {
   const queryClient = useQueryClient();
   const { data: requests } = useQuery({
@@ -34,14 +57,17 @@ export function MyRequestsPage() {
       ? planningYearSetting.params.year
       : new Date().getFullYear();
 
-  async function handleCancel(id: string) {
-    await cancelLeaveRequest(id);
+  // Один вызов — бэкенд отменяет всю заявку (все периоды с тем же
+  // submission_id) атомарно, не только переданный период.
+  async function handleCancel(submission: Submission) {
+    await cancelLeaveRequest(submission.requests[0].id);
     queryClient.invalidateQueries({ queryKey: ["my-leave-requests"] });
     queryClient.invalidateQueries({ queryKey: ["my-balance"] });
   }
 
   const approvedRequests = (requests ?? []).filter((r) => r.status === "approved");
   const pendingRequests = (requests ?? []).filter((r) => r.status === "pending_approval");
+  const submissions = groupBySubmission(requests ?? []);
 
   return (
     <div>
@@ -61,6 +87,7 @@ export function MyRequestsPage() {
             numberOfMonths={12}
             defaultMonth={new Date(planningYear, 0, 1)}
             disableNavigation
+            hideNavigation
             modifiers={{
               approved: toMatchers(approvedRequests),
               pending: toMatchers(pendingRequests),
@@ -90,33 +117,40 @@ export function MyRequestsPage() {
       <table style={{ borderCollapse: "collapse", width: "100%" }}>
         <thead>
           <tr>
-            <th style={{ textAlign: "left" }}>Период</th>
+            <th style={{ textAlign: "left" }}>Периоды</th>
             <th style={{ textAlign: "left" }}>Дней</th>
             <th style={{ textAlign: "left" }}>Статус</th>
             <th />
           </tr>
         </thead>
         <tbody>
-          {requests?.map((r) => (
-            <tr key={r.id}>
-              <td>
-                {r.date_from} — {r.date_to}
-                {r.bonus_requested && " 🎁"}
-              </td>
-              <td>{r.days}</td>
-              <td>{statusLabel(r.status)}</td>
-              <td>
-                {r.status === "pending_approval" && (
-                  <button onClick={() => handleCancel(r.id)}>Отменить</button>
-                )}
-                {r.status === "approved" && (
-                  <span style={{ color: "#888", fontSize: "0.85em" }}>
-                    Отменить может только руководитель
-                  </span>
-                )}
-              </td>
-            </tr>
-          ))}
+          {submissions.map((s) => {
+            const status = s.requests[0].status;
+            return (
+              <tr key={s.key}>
+                <td style={{ verticalAlign: "top", padding: "8px 8px 8px 0" }}>
+                  {s.requests.map((r) => (
+                    <div key={r.id}>
+                      {r.date_from} — {r.date_to}
+                      {r.bonus_requested && " 🎁"}
+                    </div>
+                  ))}
+                </td>
+                <td style={{ verticalAlign: "top" }}>{s.totalDays}</td>
+                <td style={{ verticalAlign: "top" }}>{statusLabel(status)}</td>
+                <td style={{ verticalAlign: "top" }}>
+                  {status === "pending_approval" && (
+                    <button onClick={() => handleCancel(s)}>Отменить</button>
+                  )}
+                  {status === "approved" && (
+                    <span style={{ color: "#888", fontSize: "0.85em" }}>
+                      Отменить может только руководитель
+                    </span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

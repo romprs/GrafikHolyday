@@ -4,6 +4,7 @@ import type {
   LeaveBalanceOut,
   LeaveRequestOut,
   RestrictionSettingsOut,
+  SyncRunOut,
   UserWithRoleOut,
 } from "./types";
 
@@ -49,6 +50,28 @@ export function revokeRole(userId: string, role: string): Promise<void> {
 
 export function getUserBalance(userId: string, year: number): Promise<LeaveBalanceOut> {
   return apiFetch<LeaveBalanceOut>(`/leave-balances/${userId}?year=${year}`);
+}
+
+export function setEmployeeCode(userId: string, employeeCode: string | null): Promise<UserWithRoleOut> {
+  return apiFetch<UserWithRoleOut>(`/admin/users/${userId}/employee-code`, {
+    method: "PATCH",
+    body: JSON.stringify({ employee_code: employeeCode }),
+  });
+}
+
+export function importStudyPeriodsFile(raw: unknown[]): Promise<SyncRunOut> {
+  return apiFetch<SyncRunOut>("/admin/study-periods/import", {
+    method: "POST",
+    body: JSON.stringify(raw),
+  });
+}
+
+export function triggerStudyPeriodsSync(): Promise<SyncRunOut> {
+  return apiFetch<SyncRunOut>("/admin/study-periods/run", { method: "POST" });
+}
+
+export function listStudyPeriodsRuns(): Promise<SyncRunOut[]> {
+  return apiFetch<SyncRunOut[]>("/admin/study-periods/runs");
 }
 
 export function setUserBalance(

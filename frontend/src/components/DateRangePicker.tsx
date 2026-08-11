@@ -81,6 +81,7 @@ export function DateRangePicker({
           numberOfMonths={12}
           defaultMonth={yearStart}
           disableNavigation
+          hideNavigation
           onDayMouseEnter={(day) => onHoverDayChange?.(day)}
           onDayMouseLeave={() => onHoverDayChange?.(undefined)}
           modifiers={{

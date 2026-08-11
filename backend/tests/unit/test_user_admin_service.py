@@ -1,6 +1,6 @@
 import pytest
 
-from app.core.exceptions import ForbiddenError
+from app.core.exceptions import ForbiddenError, ValidationFailedError
 from app.models.user import User
 from app.models.user_role import UserRole
 from app.services import permissions, user_admin_service
@@ -52,3 +52,20 @@ def test_revoke_role(db_session, users):
 def test_cannot_revoke_own_role(db_session, users):
     with pytest.raises(ForbiddenError):
         user_admin_service.revoke_role(db_session, users["hr"], users["hr"].id, "hr_admin")
+
+
+def test_set_employee_code(db_session, users):
+    updated = user_admin_service.set_employee_code(db_session, users["employee"].id, "2800")
+    assert updated.employee_code == "2800"
+
+
+def test_set_employee_code_rejects_duplicate(db_session, users):
+    user_admin_service.set_employee_code(db_session, users["hr"].id, "2800")
+    with pytest.raises(ValidationFailedError):
+        user_admin_service.set_employee_code(db_session, users["employee"].id, "2800")
+
+
+def test_set_employee_code_clears_with_blank(db_session, users):
+    user_admin_service.set_employee_code(db_session, users["employee"].id, "2800")
+    cleared = user_admin_service.set_employee_code(db_session, users["employee"].id, "  ")
+    assert cleared.employee_code is None

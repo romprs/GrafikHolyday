@@ -1,7 +1,14 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { updateRestrictionSetting } from "../api/admin";
+import {
+  importStudyPeriodsFile,
+  listStudyPeriodsRuns,
+  triggerStudyPeriodsSync,
+  updateRestrictionSetting,
+} from "../api/admin";
 import { getRestrictionSettings } from "../api/calendar";
+import { ApiError } from "../api/client";
+import type { SyncRunOut } from "../api/types";
 
 export function IntegrationsSettingsPage() {
   const { data: settings } = useQuery({
@@ -11,14 +18,219 @@ export function IntegrationsSettingsPage() {
 
   const externalSource = settings?.find((s) => s.key === "external_source_connection");
   const auth = settings?.find((s) => s.key === "auth_configuration");
+  const studyPeriods = settings?.find((s) => s.key === "study_periods_source");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 560 }}>
       <h3>Настройки интеграций</h3>
 
       {externalSource && <ExternalSourceForm key={externalSource.key} setting={externalSource} />}
+      {studyPeriods && <StudyPeriodsSourceForm key={studyPeriods.key} setting={studyPeriods} />}
       {auth && <AuthForm key={auth.key} setting={auth} />}
     </div>
+  );
+}
+
+const RUN_STATUS_LABELS: Record<string, string> = {
+  running: "выполняется",
+  success: "успешно",
+  failed: "ошибка",
+  partial: "частично",
+};
+
+function RunSummary({ run }: { run: SyncRunOut }) {
+  const s = run.summary;
+  return (
+    <span>
+      {new Date(run.started_at).toLocaleString("ru-RU")} — {RUN_STATUS_LABELS[run.status] ?? run.status}
+      {s.periods_created !== undefined && (
+        <>
+          : создано {s.periods_created}, обновлено {s.periods_updated ?? 0}, деактивировано{" "}
+          {s.periods_deactivated ?? 0}
+          {!!s.employees_unmatched && `, не найдено по табельному номеру: ${s.employees_unmatched}`}
+          {!!s.employees_failed && `, ошибок запроса: ${s.employees_failed}`}
+        </>
+      )}
+    </span>
+  );
+}
+
+function StudyPeriodsSourceForm({
+  setting,
+}: {
+  setting: { enabled: boolean; params: Record<string, unknown> };
+}) {
+  const queryClient = useQueryClient();
+  const [enabled, setEnabled] = useState(setting.enabled);
+  const [mode, setMode] = useState((setting.params.mode as string) ?? "file");
+  const [baseUrl, setBaseUrl] = useState((setting.params.base_url as string) ?? "");
+  const [authLogin, setAuthLogin] = useState((setting.params.auth_login as string) ?? "");
+  const [authPassword, setAuthPassword] = useState((setting.params.auth_password as string) ?? "");
+  const [verifyTls, setVerifyTls] = useState(Boolean(setting.params.verify_tls));
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    setEnabled(setting.enabled);
+    setMode((setting.params.mode as string) ?? "file");
+    setBaseUrl((setting.params.base_url as string) ?? "");
+    setAuthLogin((setting.params.auth_login as string) ?? "");
+    setAuthPassword((setting.params.auth_password as string) ?? "");
+    setVerifyTls(Boolean(setting.params.verify_tls));
+  }, [setting]);
+
+  const { data: runs } = useQuery({
+    queryKey: ["study-periods-runs"],
+    queryFn: listStudyPeriodsRuns,
+  });
+
+  async function handleSave() {
+    setSaving(true);
+    setSaved(false);
+    try {
+      await updateRestrictionSetting("study_periods_source", {
+        enabled,
+        params: {
+          mode,
+          base_url: baseUrl,
+          auth_login: authLogin,
+          auth_password: authPassword,
+          verify_tls: verifyTls,
+        },
+      });
+      queryClient.invalidateQueries({ queryKey: ["restriction-settings"] });
+      setSaved(true);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRunHttp() {
+    setRunError(null);
+    setRunning(true);
+    try {
+      await triggerStudyPeriodsSync();
+      queryClient.invalidateQueries({ queryKey: ["study-periods-runs"] });
+      queryClient.invalidateQueries({ queryKey: ["blocked-periods"] });
+    } catch (err) {
+      setRunError(err instanceof ApiError ? err.message : "Не удалось запустить синхронизацию");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  async function handleFileImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setRunError(null);
+    setRunning(true);
+    try {
+      const text = await file.text();
+      const raw = JSON.parse(text);
+      if (!Array.isArray(raw)) throw new Error("Ожидается JSON-массив на верхнем уровне файла");
+      await importStudyPeriodsFile(raw);
+      queryClient.invalidateQueries({ queryKey: ["study-periods-runs"] });
+      queryClient.invalidateQueries({ queryKey: ["blocked-periods"] });
+    } catch (err) {
+      setRunError(err instanceof ApiError ? err.message : (err as Error).message);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <section style={{ border: "1px solid #ddd", borderRadius: 6, padding: 16 }}>
+      <h4 style={{ marginTop: 0 }}>Источник учебных планов (недоступные периоды)</h4>
+      <p style={{ fontSize: "0.85em", color: "#888" }}>
+        Недоступные периоды сотрудников (обучение и т.п.) сопоставляются по табельному номеру
+        (задаётся на странице «Сотрудники»). Два режима: загрузка JSON-файла вручную — доступно уже
+        сейчас — или синхронизация напрямую из источника по HTTP, когда будет согласован боевой
+        эндпойнт.
+      </p>
+      <label style={{ display: "block", marginBottom: 8 }}>
+        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />{" "}
+        Интеграция включена
+      </label>
+      <label style={{ display: "block", marginBottom: 8 }}>
+        Режим
+        <select value={mode} onChange={(e) => setMode(e.target.value)} style={{ display: "block" }}>
+          <option value="file">Файл (JSON, загружается вручную)</option>
+          <option value="http">HTTP-источник</option>
+        </select>
+      </label>
+
+      {mode === "http" && (
+        <>
+          <label style={{ display: "block", marginBottom: 8 }}>
+            URL источника
+            <input
+              type="text"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://host/hs/Employee/study_plan/..."
+              style={{ display: "block", width: "100%" }}
+            />
+          </label>
+          <label style={{ display: "block", marginBottom: 8 }}>
+            Логин
+            <input
+              type="text"
+              value={authLogin}
+              onChange={(e) => setAuthLogin(e.target.value)}
+              style={{ display: "block", width: "100%" }}
+            />
+          </label>
+          <label style={{ display: "block", marginBottom: 8 }}>
+            Пароль
+            <input
+              type="password"
+              value={authPassword}
+              onChange={(e) => setAuthPassword(e.target.value)}
+              style={{ display: "block", width: "100%" }}
+            />
+          </label>
+          <label style={{ display: "block", marginBottom: 8 }}>
+            <input
+              type="checkbox"
+              checked={verifyTls}
+              onChange={(e) => setVerifyTls(e.target.checked)}
+            />{" "}
+            Проверять TLS-сертификат
+          </label>
+        </>
+      )}
+
+      <button onClick={handleSave} disabled={saving}>
+        Сохранить
+      </button>
+      {saved && <span style={{ marginLeft: 8, color: "green" }}>Сохранено</span>}
+
+      <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #eee" }}>
+        {mode === "http" ? (
+          <button onClick={handleRunHttp} disabled={running || !enabled}>
+            Синхронизировать сейчас
+          </button>
+        ) : (
+          <label>
+            <span style={{ display: "inline-block", marginRight: 8 }}>Загрузить файл:</span>
+            <input type="file" accept=".json,application/json" onChange={handleFileImport} disabled={running} />
+          </label>
+        )}
+        {runError && <p style={{ color: "crimson" }}>{runError}</p>}
+        {runs && runs.length > 0 && (
+          <ul style={{ fontSize: "0.85em", marginTop: 8, paddingLeft: 20 }}>
+            {runs.slice(0, 5).map((r) => (
+              <li key={r.id}>
+                <RunSummary run={r} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
   );
 }
 
