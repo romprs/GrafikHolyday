@@ -15,6 +15,11 @@ class User(UUIDPKMixin, TimestampMixin, Base):
 
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     full_name: Mapped[str] = mapped_column(String, nullable=False)
+    # Табельный номер — локальное поле (в отличие от остального, синком не
+    # владеет): используется для сопоставления с внешними системами, где
+    # сотрудник идентифицируется этим номером, а не email/ФИО (например,
+    # источник учебных планов, см. app/integrations/study_periods.py).
+    employee_code: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
     org_unit_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("org_units.id"), nullable=True
     )

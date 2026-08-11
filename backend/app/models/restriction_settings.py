@@ -49,3 +49,7 @@ VACATION_BONUS = "vacation_bonus"
 EXTERNAL_SOURCE_CONNECTION = "external_source_connection"
 # Параметры авторизации (режим dev/oidc и реквизиты OIDC-провайдера).
 AUTH_CONFIGURATION = "auth_configuration"
+# Подключение к источнику учебных планов (недоступные периоды сотрудников) —
+# см. app/integrations/study_periods.py. Сопоставление с сотрудником — по
+# табельному номеру (User.employee_code).
+STUDY_PERIODS_SOURCE = "study_periods_source"
