@@ -20,6 +20,14 @@ export interface OrgUnitOut {
   is_active: boolean;
 }
 
+export interface OrgUnitEmployeeOut {
+  id: string;
+  full_name: string;
+  email: string;
+  org_unit_id: string | null;
+  role: "employee" | "manager" | "hr_admin";
+}
+
 export type LeaveRequestStatus =
   | "draft"
   | "pending_approval"

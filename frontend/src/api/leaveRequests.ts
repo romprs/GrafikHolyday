@@ -42,8 +42,8 @@ export function cancelLeaveRequest(id: string): Promise<LeaveRequestOut> {
   return apiFetch<LeaveRequestOut>(`/leave-requests/${id}/cancel`, { method: "POST" });
 }
 
-export function managerCancelLeaveRequest(id: string, comment?: string): Promise<LeaveRequestOut> {
-  return apiFetch<LeaveRequestOut>(`/leave-requests/${id}/manager-cancel`, {
+export function managerCancelLeaveRequest(id: string, comment?: string): Promise<LeaveRequestOut[]> {
+  return apiFetch<LeaveRequestOut[]>(`/leave-requests/${id}/manager-cancel`, {
     method: "POST",
     body: JSON.stringify({ comment }),
   });
@@ -57,15 +57,15 @@ export function listApprovedForTeam(): Promise<LeaveRequestWithEmployeeOut[]> {
   return apiFetch<LeaveRequestWithEmployeeOut[]>("/leave-requests/team/approved");
 }
 
-export function approveLeaveRequest(id: string, comment?: string): Promise<LeaveRequestOut> {
-  return apiFetch<LeaveRequestOut>(`/leave-requests/${id}/approve`, {
+export function approveLeaveRequest(id: string, comment?: string): Promise<LeaveRequestOut[]> {
+  return apiFetch<LeaveRequestOut[]>(`/leave-requests/${id}/approve`, {
     method: "POST",
     body: JSON.stringify({ comment }),
   });
 }
 
-export function rejectLeaveRequest(id: string, comment?: string): Promise<LeaveRequestOut> {
-  return apiFetch<LeaveRequestOut>(`/leave-requests/${id}/reject`, {
+export function rejectLeaveRequest(id: string, comment?: string): Promise<LeaveRequestOut[]> {
+  return apiFetch<LeaveRequestOut[]>(`/leave-requests/${id}/reject`, {
     method: "POST",
     body: JSON.stringify({ comment }),
   });

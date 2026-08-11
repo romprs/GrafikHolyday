@@ -148,15 +148,15 @@ export function OrgLoadDashboardPage() {
     });
   }
 
+  // Один API-вызов — бэкенд согласует/отклоняет всю заявку (все периоды с
+  // тем же submission_id) атомарно, group() тут больше не нужен.
   async function handleApproveSubmission(leave: OrgLoadLeaveEntryOut) {
-    const group = leaves.filter((l) => (l.submission_id ?? l.id) === (leave.submission_id ?? leave.id));
-    await Promise.all(group.map((l) => approveLeaveRequest(l.id)));
+    await approveLeaveRequest(leave.id);
     queryClient.invalidateQueries({ queryKey: ["org-load-detail", unitId] });
   }
 
   async function handleRejectSubmission(leave: OrgLoadLeaveEntryOut) {
-    const group = leaves.filter((l) => (l.submission_id ?? l.id) === (leave.submission_id ?? leave.id));
-    await Promise.all(group.map((l) => rejectLeaveRequest(l.id)));
+    await rejectLeaveRequest(leave.id);
     queryClient.invalidateQueries({ queryKey: ["org-load-detail", unitId] });
   }
 

@@ -12,3 +12,11 @@ class OrgUnitOut(BaseModel):
     unit_kind: str | None
     head_user_id: uuid.UUID | None
     is_active: bool
+
+
+class OrgUnitEmployeeOut(BaseModel):
+    id: uuid.UUID
+    full_name: str
+    email: str
+    org_unit_id: uuid.UUID | None
+    role: str

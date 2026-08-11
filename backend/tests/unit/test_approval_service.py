@@ -48,8 +48,9 @@ def scenario(db_session):
 
 def test_approve_by_direct_manager(db_session, scenario):
     result = approval_service.approve(db_session, scenario["manager"], scenario["request"].id, "ок")
-    assert result.status == APPROVED
-    assert result.reviewer_id == scenario["manager"].id
+    assert len(result) == 1
+    assert result[0].status == APPROVED
+    assert result[0].reviewer_id == scenario["manager"].id
 
 
 def test_approve_by_non_manager_forbidden(db_session, scenario):
@@ -65,7 +66,8 @@ def test_approve_already_reviewed_conflict(db_session, scenario):
 
 def test_reject_by_direct_manager(db_session, scenario):
     result = approval_service.reject(db_session, scenario["manager"], scenario["request"].id, "нет")
-    assert result.status == REJECTED
+    assert len(result) == 1
+    assert result[0].status == REJECTED
 
 
 def test_list_pending_for_manager(db_session, scenario):
@@ -82,8 +84,9 @@ def test_manager_cancel_approved(db_session, scenario):
     cancelled = approval_service.manager_cancel_approved(
         db_session, scenario["manager"], scenario["request"].id, "передумали"
     )
-    assert cancelled.status == "cancelled"
-    assert cancelled.cancelled_by == scenario["manager"].id
+    assert len(cancelled) == 1
+    assert cancelled[0].status == "cancelled"
+    assert cancelled[0].cancelled_by == scenario["manager"].id
 
 
 def test_manager_cancel_approved_by_non_manager_forbidden(db_session, scenario):
@@ -99,6 +102,28 @@ def test_manager_cancel_pending_conflict(db_session, scenario):
         approval_service.manager_cancel_approved(
             db_session, scenario["manager"], scenario["request"].id, None
         )
+
+
+def test_approve_covers_whole_submission(db_session, scenario):
+    import uuid
+
+    submission_id = uuid.uuid4()
+    scenario["request"].submission_id = submission_id
+    second = LeaveRequest(
+        user_id=scenario["employee"].id,
+        leave_type_id=scenario["request"].leave_type_id,
+        date_from=date(2026, 7, 1),
+        date_to=date(2026, 7, 3),
+        status=PENDING_APPROVAL,
+        submission_id=submission_id,
+    )
+    db_session.add(second)
+    db_session.flush()
+
+    result = approval_service.approve(db_session, scenario["manager"], scenario["request"].id, "ок")
+
+    assert {r.id for r in result} == {scenario["request"].id, second.id}
+    assert all(r.status == APPROVED for r in result)
 
 
 def test_list_approved_for_manager(db_session, scenario):

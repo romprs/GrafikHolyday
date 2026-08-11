@@ -96,24 +96,24 @@ def list_approved_for_my_team(db: DbSession, user: CurrentUser) -> list[LeaveReq
     return _with_employee_names(db, approval_service.list_approved_for_manager(db, user))
 
 
-@router.post("/{request_id}/manager-cancel", response_model=LeaveRequestOut)
+@router.post("/{request_id}/manager-cancel", response_model=list[LeaveRequestOut])
 def manager_cancel_leave_request(
     request_id: uuid.UUID, body: LeaveRequestReview, db: DbSession, user: CurrentUser
-) -> LeaveRequestOut:
+) -> list[LeaveRequestOut]:
     return approval_service.manager_cancel_approved(db, user, request_id, body.comment)
 
 
-@router.post("/{request_id}/approve", response_model=LeaveRequestOut)
+@router.post("/{request_id}/approve", response_model=list[LeaveRequestOut])
 def approve_leave_request(
     request_id: uuid.UUID, body: LeaveRequestReview, db: DbSession, user: CurrentUser
-) -> LeaveRequestOut:
+) -> list[LeaveRequestOut]:
     return approval_service.approve(db, user, request_id, body.comment)
 
 
-@router.post("/{request_id}/reject", response_model=LeaveRequestOut)
+@router.post("/{request_id}/reject", response_model=list[LeaveRequestOut])
 def reject_leave_request(
     request_id: uuid.UUID, body: LeaveRequestReview, db: DbSession, user: CurrentUser
-) -> LeaveRequestOut:
+) -> list[LeaveRequestOut]:
     return approval_service.reject(db, user, request_id, body.comment)
 
 

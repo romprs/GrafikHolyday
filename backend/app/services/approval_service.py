@@ -32,9 +32,13 @@ def _is_direct_manager_of(db: Session, reviewer: User, target: User) -> bool:
     ) is not None
 
 
-def _get_pending_request_for_review(
-    db: Session, reviewer: User, request_id: uuid.UUID
-) -> LeaveRequest:
+def _get_requests_for_submission(
+    db: Session, reviewer: User, request_id: uuid.UUID, expected_status: str, conflict_message: str
+) -> list[LeaveRequest]:
+    """Все периоды одной заявки (submission_id), а не только запрошенный —
+    заявка согласуется/отклоняется/отменяется целиком, одной транзакцией.
+    У заявок, созданных до появления группировки, submission_id пуст — тогда
+    группа состоит из одного периода."""
     request = db.get(LeaveRequest, request_id)
     if request is None:
         raise NotFoundError("Заявка не найдена")
@@ -43,12 +47,20 @@ def _get_pending_request_for_review(
     if target is None or not _is_direct_manager_of(db, reviewer, target):
         raise ForbiddenError("Вы не являетесь руководителем отдела этого сотрудника")
 
-    if request.status != PENDING_APPROVAL:
-        raise ConflictError(
-            "Заявка уже обработана и недоступна для согласования",
-            {"current_status": request.status},
-        )
-    return request
+    if request.status != expected_status:
+        raise ConflictError(conflict_message, {"current_status": request.status})
+
+    if request.submission_id is None:
+        return [request]
+
+    return list(
+        db.scalars(
+            select(LeaveRequest).where(
+                LeaveRequest.submission_id == request.submission_id,
+                LeaveRequest.status == expected_status,
+            )
+        ).all()
+    )
 
 
 def list_pending_for_manager(db: Session, manager: User) -> list[LeaveRequest]:
@@ -72,28 +84,38 @@ def list_pending_for_manager(db: Session, manager: User) -> list[LeaveRequest]:
 
 def approve(
     db: Session, reviewer: User, request_id: uuid.UUID, review_comment: str | None
-) -> LeaveRequest:
-    request = _get_pending_request_for_review(db, reviewer, request_id)
-    request.status = APPROVED
-    request.reviewer_id = reviewer.id
-    request.review_comment = review_comment
-    request.reviewed_at = datetime.now(timezone.utc)
+) -> list[LeaveRequest]:
+    requests = _get_requests_for_submission(
+        db, reviewer, request_id, PENDING_APPROVAL, "Заявка уже обработана и недоступна для согласования"
+    )
+    now = datetime.now(timezone.utc)
+    for request in requests:
+        request.status = APPROVED
+        request.reviewer_id = reviewer.id
+        request.review_comment = review_comment
+        request.reviewed_at = now
     db.commit()
-    db.refresh(request)
-    return request
+    for request in requests:
+        db.refresh(request)
+    return requests
 
 
 def reject(
     db: Session, reviewer: User, request_id: uuid.UUID, review_comment: str | None
-) -> LeaveRequest:
-    request = _get_pending_request_for_review(db, reviewer, request_id)
-    request.status = REJECTED
-    request.reviewer_id = reviewer.id
-    request.review_comment = review_comment
-    request.reviewed_at = datetime.now(timezone.utc)
+) -> list[LeaveRequest]:
+    requests = _get_requests_for_submission(
+        db, reviewer, request_id, PENDING_APPROVAL, "Заявка уже обработана и недоступна для согласования"
+    )
+    now = datetime.now(timezone.utc)
+    for request in requests:
+        request.status = REJECTED
+        request.reviewer_id = reviewer.id
+        request.review_comment = review_comment
+        request.reviewed_at = now
     db.commit()
-    db.refresh(request)
-    return request
+    for request in requests:
+        db.refresh(request)
+    return requests
 
 
 def list_approved_for_manager(db: Session, manager: User) -> list[LeaveRequest]:
@@ -121,32 +143,25 @@ def list_approved_for_manager(db: Session, manager: User) -> list[LeaveRequest]:
 
 def manager_cancel_approved(
     db: Session, manager: User, request_id: uuid.UUID, review_comment: str | None
-) -> LeaveRequest:
-    """Отмена уже согласованной заявки руководителем прямого отдела
-    сотрудника — единственный способ отменить согласованную заявку помимо
-    HR admin-override (см. admin_override)."""
-    request = db.get(LeaveRequest, request_id)
-    if request is None:
-        raise NotFoundError("Заявка не найдена")
-
-    target = db.get(User, request.user_id)
-    if target is None or not _is_direct_manager_of(db, manager, target):
-        raise ForbiddenError("Вы не являетесь руководителем отдела этого сотрудника")
-
-    if request.status != APPROVED:
-        raise ConflictError(
-            "Отменить можно только уже согласованную заявку", {"current_status": request.status}
-        )
-
-    request.status = CANCELLED
-    request.reviewer_id = manager.id
-    request.review_comment = review_comment
-    request.reviewed_at = datetime.now(timezone.utc)
-    request.cancelled_at = datetime.now(timezone.utc)
-    request.cancelled_by = manager.id
+) -> list[LeaveRequest]:
+    """Отмена уже согласованной заявки целиком (все её периоды) руководителем
+    прямого отдела сотрудника — единственный способ отменить согласованную
+    заявку помимо HR admin-override (см. admin_override)."""
+    requests = _get_requests_for_submission(
+        db, manager, request_id, APPROVED, "Отменить можно только уже согласованную заявку"
+    )
+    now = datetime.now(timezone.utc)
+    for request in requests:
+        request.status = CANCELLED
+        request.reviewer_id = manager.id
+        request.review_comment = review_comment
+        request.reviewed_at = now
+        request.cancelled_at = now
+        request.cancelled_by = manager.id
     db.commit()
-    db.refresh(request)
-    return request
+    for request in requests:
+        db.refresh(request)
+    return requests
 
 
 def admin_override(

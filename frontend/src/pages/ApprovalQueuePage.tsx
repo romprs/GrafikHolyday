@@ -53,18 +53,20 @@ export function ApprovalQueuePage() {
     queryClient.invalidateQueries({ queryKey: ["team-approved-requests"] });
   }
 
+  // Один API-вызов на любой period из группы — бэкенд согласует/отклоняет/
+  // отменяет всю заявку (все её периоды с тем же submission_id) атомарно.
   async function handleApprove(submission: Submission) {
-    await Promise.all(submission.requests.map((r) => approveLeaveRequest(r.id)));
+    await approveLeaveRequest(submission.requests[0].id);
     invalidate();
   }
 
   async function handleReject(submission: Submission) {
-    await Promise.all(submission.requests.map((r) => rejectLeaveRequest(r.id)));
+    await rejectLeaveRequest(submission.requests[0].id);
     invalidate();
   }
 
   async function handleManagerCancel(submission: Submission) {
-    await Promise.all(submission.requests.map((r) => managerCancelLeaveRequest(r.id)));
+    await managerCancelLeaveRequest(submission.requests[0].id);
     invalidate();
   }
 
