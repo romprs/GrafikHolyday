@@ -6,10 +6,15 @@ import type {
   TeamLeaveOut,
 } from "./types";
 
-export function getBlockedRanges(dateFrom?: string, dateTo?: string): Promise<BlockedRangeOut[]> {
+export function getBlockedRanges(
+  dateFrom?: string,
+  dateTo?: string,
+  onBehalfOf?: string,
+): Promise<BlockedRangeOut[]> {
   const params = new URLSearchParams();
   if (dateFrom) params.set("date_from", dateFrom);
   if (dateTo) params.set("date_to", dateTo);
+  if (onBehalfOf) params.set("on_behalf_of", onBehalfOf);
   const query = params.toString();
   return apiFetch<BlockedRangeOut[]>(`/calendar/blocked${query ? `?${query}` : ""}`);
 }

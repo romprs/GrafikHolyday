@@ -42,6 +42,12 @@ class LeaveRequest(UUIDPKMixin, TimestampMixin, Base):
     # а не по одному периоду. NULL у черновиков и у заявок, созданных до
     # появления этого поля.
     submission_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Кто фактически создал/подал заявку, если не сам сотрудник (user_id) —
+    # делегат или руководитель, действующий от его имени (см.
+    # app/services/delegation_service.py). NULL — заявка от самого себя.
+    acted_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
 
     reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True

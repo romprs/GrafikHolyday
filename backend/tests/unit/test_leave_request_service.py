@@ -14,7 +14,8 @@ from app.models.leave_request import (
 from app.models.leave_type import LeaveType
 from app.models.restriction_settings import MIN_LEAVE_DURATION, RestrictionSettings
 from app.models.user import User
-from app.services import leave_request_service
+from app.models.user_role import UserRole
+from app.services import delegation_service, leave_request_service
 
 
 @pytest.fixture()
@@ -136,3 +137,43 @@ def test_create_draft_allowed_after_rejection(
         db_session, balance_7, date(2026, 9, 1), date(2026, 9, 7), None
     )
     assert new_draft.status == DRAFT
+
+
+def test_delegate_can_submit_on_behalf_of_employee(
+    db_session, vacation_type, min_duration_setting, balance_7
+):
+    delegate = User(email="delegate@test.local", full_name="Delegate")
+    hr_admin = User(email="hr@test.local", full_name="HR")
+    db_session.add_all([delegate, hr_admin])
+    db_session.flush()
+    db_session.add(UserRole(user_id=hr_admin.id, role="hr_admin"))
+    db_session.flush()
+    delegation_service.grant(db_session, hr_admin, delegate.id, balance_7.id)
+
+    draft = leave_request_service.create_draft(
+        db_session, delegate, date(2026, 6, 1), date(2026, 6, 7), None, on_behalf_of=balance_7.id
+    )
+    assert draft.user_id == balance_7.id
+    assert draft.acted_by == delegate.id
+
+    submitted = leave_request_service.submit_drafts(
+        db_session, delegate, 2026, on_behalf_of=balance_7.id
+    )
+    assert submitted[0].status == PENDING_APPROVAL
+    assert submitted[0].user_id == balance_7.id
+
+    mine_for_subject = leave_request_service.list_own(db_session, delegate, on_behalf_of=balance_7.id)
+    assert len(mine_for_subject) == 1
+
+
+def test_stranger_cannot_submit_on_behalf_of_employee(
+    db_session, vacation_type, min_duration_setting, balance_7
+):
+    stranger = User(email="stranger@test.local", full_name="Stranger")
+    db_session.add(stranger)
+    db_session.flush()
+
+    with pytest.raises(ForbiddenError):
+        leave_request_service.create_draft(
+            db_session, stranger, date(2026, 6, 1), date(2026, 6, 7), None, on_behalf_of=balance_7.id
+        )

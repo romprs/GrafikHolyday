@@ -41,14 +41,22 @@ def _with_employee_names(
 
 
 @router.get("/drafts", response_model=list[LeaveRequestOut])
-def list_drafts(db: DbSession, user: CurrentUser, year: int | None = None) -> list[LeaveRequestOut]:
-    return leave_request_service.list_drafts(db, user, _resolved_year(db, year))
+def list_drafts(
+    db: DbSession, user: CurrentUser, year: int | None = None, on_behalf_of: uuid.UUID | None = None
+) -> list[LeaveRequestOut]:
+    return leave_request_service.list_drafts(db, user, _resolved_year(db, year), on_behalf_of)
 
 
 @router.post("/drafts", response_model=LeaveRequestOut)
 def add_draft(body: LeaveRequestCreate, db: DbSession, user: CurrentUser) -> LeaveRequestOut:
     return leave_request_service.create_draft(
-        db, user, body.date_from, body.date_to, body.comment, body.bonus_requested
+        db,
+        user,
+        body.date_from,
+        body.date_to,
+        body.comment,
+        body.bonus_requested,
+        body.on_behalf_of,
     )
 
 
@@ -65,13 +73,17 @@ def update_draft(
 
 
 @router.post("/submit", response_model=list[LeaveRequestOut])
-def submit_drafts(db: DbSession, user: CurrentUser, year: int | None = None) -> list[LeaveRequestOut]:
-    return leave_request_service.submit_drafts(db, user, _resolved_year(db, year))
+def submit_drafts(
+    db: DbSession, user: CurrentUser, year: int | None = None, on_behalf_of: uuid.UUID | None = None
+) -> list[LeaveRequestOut]:
+    return leave_request_service.submit_drafts(db, user, _resolved_year(db, year), on_behalf_of)
 
 
 @router.get("/mine", response_model=list[LeaveRequestOut])
-def list_my_leave_requests(db: DbSession, user: CurrentUser) -> list[LeaveRequestOut]:
-    return leave_request_service.list_own(db, user)
+def list_my_leave_requests(
+    db: DbSession, user: CurrentUser, on_behalf_of: uuid.UUID | None = None
+) -> list[LeaveRequestOut]:
+    return leave_request_service.list_own(db, user, on_behalf_of)
 
 
 @router.get("/all", response_model=list[LeaveRequestOut])

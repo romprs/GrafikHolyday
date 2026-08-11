@@ -44,6 +44,7 @@ export interface LeaveRequestOut {
   status: LeaveRequestStatus;
   bonus_requested: boolean;
   submission_id: string | null;
+  acted_by: string | null;
   reviewer_id: string | null;
   review_comment: string | null;
   submitted_at: string | null;
@@ -185,4 +186,20 @@ export interface UserWithRoleOut {
   is_active: boolean;
   role: "employee" | "manager" | "hr_admin";
   employee_code: string | null;
+}
+
+export interface LeaveDelegationOut {
+  id: string;
+  delegate_user_id: string;
+  target_user_id: string;
+  is_active: boolean;
+  created_by: string;
+  created_at: string;
+  revoked_at: string | null;
+}
+
+export interface DelegationTargetOut {
+  id: string;
+  full_name: string;
+  email: string;
 }

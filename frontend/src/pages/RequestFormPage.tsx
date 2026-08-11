@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { DateRange } from "react-day-picker";
 import { ApiError } from "../api/client";
 import { getBlockedRanges, getRestrictionSettings } from "../api/calendar";
+import { listMyDelegationTargets } from "../api/delegations";
 import {
   addDraft,
   getMyBalance,
@@ -26,15 +27,22 @@ export function RequestFormPage() {
   const [success, setSuccess] = useState(false);
   const [adding, setAdding] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [onBehalfOf, setOnBehalfOf] = useState<string | undefined>(undefined);
   const lastAutoAddedKey = useRef<string | null>(null);
 
   const { data: restrictionSettings } = useQuery({
     queryKey: ["restriction-settings"],
     queryFn: getRestrictionSettings,
   });
+  // Делегаты (и руководители, которым делегировали) видят переключатель
+  // "от чьего имени" — за сотрудника, который сам системой не пользуется.
+  const { data: delegationTargets } = useQuery({
+    queryKey: ["delegation-targets"],
+    queryFn: listMyDelegationTargets,
+  });
   const { data: balance } = useQuery({
-    queryKey: ["my-balance"],
-    queryFn: getMyBalance,
+    queryKey: ["my-balance", onBehalfOf],
+    queryFn: () => getMyBalance(onBehalfOf),
   });
 
   const planningYearSetting = restrictionSettings?.find((s) => s.key === "planning_year");
@@ -47,13 +55,13 @@ export function RequestFormPage() {
   // вперемешку блокировки из всех лет, а не только те, что относятся к
   // текущему плановому году, который видно на календаре.
   const { data: blockedRanges } = useQuery({
-    queryKey: ["blocked-ranges", planningYear],
-    queryFn: () => getBlockedRanges(`${planningYear}-01-01`, `${planningYear}-12-31`),
+    queryKey: ["blocked-ranges", planningYear, onBehalfOf],
+    queryFn: () => getBlockedRanges(`${planningYear}-01-01`, `${planningYear}-12-31`, onBehalfOf),
   });
 
   const { data: drafts, isLoading: draftsLoading } = useQuery({
-    queryKey: ["drafts", planningYear],
-    queryFn: () => listDrafts(planningYear),
+    queryKey: ["drafts", planningYear, onBehalfOf],
+    queryFn: () => listDrafts(planningYear, onBehalfOf),
   });
 
   const minDaysSetting = restrictionSettings?.find((s) => s.key === "min_leave_duration");
@@ -110,6 +118,7 @@ export function RequestFormPage() {
       await addDraft({
         date_from: toIsoDate(from),
         date_to: toIsoDate(to),
+        on_behalf_of: onBehalfOf,
       });
       clearSelection();
       queryClient.invalidateQueries({ queryKey: ["drafts"] });
@@ -160,7 +169,7 @@ export function RequestFormPage() {
     setSuccess(false);
     setSubmitting(true);
     try {
-      await submitDrafts(planningYear);
+      await submitDrafts(planningYear, onBehalfOf);
       setSuccess(true);
       queryClient.invalidateQueries({ queryKey: ["drafts"] });
       queryClient.invalidateQueries({ queryKey: ["my-leave-requests"] });
@@ -177,6 +186,23 @@ export function RequestFormPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <h3>Новая заявка на отпуск</h3>
+
+      {delegationTargets && delegationTargets.length > 0 && (
+        <label>
+          Действовать от имени:{" "}
+          <select
+            value={onBehalfOf ?? ""}
+            onChange={(e) => setOnBehalfOf(e.target.value || undefined)}
+          >
+            <option value="">Себя</option>
+            {delegationTargets.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.full_name} ({t.email})
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       {balance && (
         <p>

@@ -7,6 +7,7 @@ import { AllRequestsPage } from "./AllRequestsPage";
 import { ApprovalQueuePage } from "./ApprovalQueuePage";
 import { AuditLogPage } from "./AuditLogPage";
 import { BlockedPeriodsPage } from "./BlockedPeriodsPage";
+import { DelegationsPage } from "./DelegationsPage";
 import { roleLabel } from "./DevLoginPage";
 import { EmployeesPage } from "./EmployeesPage";
 import { IntegrationsSettingsPage } from "./IntegrationsSettingsPage";
@@ -27,6 +28,7 @@ type Tab =
   | "blocked-periods"
   | "org-units"
   | "org-load"
+  | "delegations"
   | "sync"
   | "restriction-settings"
   | "integrations"
@@ -46,7 +48,7 @@ export function HomePage() {
   });
   const { data: myRequests } = useQuery({
     queryKey: ["my-leave-requests"],
-    queryFn: listMyLeaveRequests,
+    queryFn: () => listMyLeaveRequests(),
     enabled: !!currentUser,
   });
 
@@ -72,19 +74,32 @@ export function HomePage() {
     }
   }, [tab, hasActiveSubmissionThisYear]);
 
+  // HR-админ по умолчанию попал бы на скрытую для него вкладку "Мои
+  // заявки" — переключаем на первую доступную, как только известна роль.
+  useEffect(() => {
+    if (currentUser?.role === "hr_admin" && (tab === "my-requests" || tab === "team-calendar")) {
+      setTab("employees");
+    }
+  }, [currentUser?.role, tab]);
+
   if (!currentUser) return null;
 
-  const isManagerOrHr = currentUser.role !== "employee";
+  const isManager = currentUser.role === "manager";
   const isHrAdmin = currentUser.role === "hr_admin";
+  const isManagerOrHr = isManager || isHrAdmin;
 
+  // HR-админ заявки на отпуск сам не подаёт и не согласовывает через этот
+  // интерфейс (для этого есть admin-override и делегирование) — поэтому
+  // сотруднические вкладки ему не показываем.
   const tabs: { id: Tab; label: string; visible: boolean }[] = [
-    { id: "my-requests", label: "Мои заявки", visible: true },
-    { id: "new-request", label: "Новая заявка", visible: !hasActiveSubmissionThisYear },
-    { id: "approvals", label: "Согласование", visible: isManagerOrHr },
-    { id: "team-calendar", label: "Календарь отдела", visible: true },
+    { id: "my-requests", label: "Мои заявки", visible: !isHrAdmin },
+    { id: "new-request", label: "Новая заявка", visible: !isHrAdmin && !hasActiveSubmissionThisYear },
+    { id: "approvals", label: "Согласование", visible: isManager },
+    { id: "team-calendar", label: "Календарь отдела", visible: !isHrAdmin },
     { id: "blocked-periods", label: "Недоступные периоды", visible: isManagerOrHr },
-    { id: "org-units", label: "Оргструктура", visible: true },
+    { id: "org-units", label: "Оргструктура", visible: isManagerOrHr },
     { id: "org-load", label: "Загруженность отделов", visible: isManagerOrHr },
+    { id: "delegations", label: "Делегирование", visible: isManagerOrHr },
     { id: "sync", label: "Синхронизация", visible: isHrAdmin },
     { id: "restriction-settings", label: "Ограничения", visible: isHrAdmin },
     { id: "integrations", label: "Интеграции", visible: isHrAdmin },
@@ -131,6 +146,7 @@ export function HomePage() {
       {tab === "blocked-periods" && <BlockedPeriodsPage />}
       {tab === "org-units" && <OrgUnitsPage />}
       {tab === "org-load" && <OrgLoadDashboardPage />}
+      {tab === "delegations" && <DelegationsPage />}
       {tab === "sync" && <SyncPage />}
       {tab === "restriction-settings" && <RestrictionSettingsPage />}
       {tab === "integrations" && <IntegrationsSettingsPage />}

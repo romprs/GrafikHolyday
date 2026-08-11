@@ -13,23 +13,18 @@ from app.models.leave_request import (
     STATUSES,
     LeaveRequest,
 )
-from app.models.org_unit import OrgUnit
 from app.models.user import User
-from app.services import audit_service
+from app.services import audit_service, org_unit_service
 
 
-def _is_direct_manager_of(db: Session, reviewer: User, target: User) -> bool:
-    """MVP: согласование только руководителем прямого отдела сотрудника —
-    без каскадного доступа руководителей вышестоящих управлений."""
+def _is_manager_of(db: Session, reviewer: User, target: User) -> bool:
+    """Руководитель видит и согласовывает не только свой прямой отдел, но и
+    всё, что ниже по управлению (каскад) — поэтому вышестоящий руководитель
+    может согласовать заявку сотрудника из любого нижестоящего отдела, а не
+    только те, что в его собственном org_unit."""
     if target.org_unit_id is None:
         return False
-    return db.scalar(
-        select(OrgUnit.id).where(
-            OrgUnit.id == target.org_unit_id,
-            OrgUnit.head_user_id == reviewer.id,
-            OrgUnit.is_active,
-        )
-    ) is not None
+    return target.org_unit_id in set(org_unit_service.visible_unit_ids(db, reviewer) or [])
 
 
 def _get_requests_for_submission(
@@ -44,7 +39,7 @@ def _get_requests_for_submission(
         raise NotFoundError("Заявка не найдена")
 
     target = db.get(User, request.user_id)
-    if target is None or not _is_direct_manager_of(db, reviewer, target):
+    if target is None or not _is_manager_of(db, reviewer, target):
         raise ForbiddenError("Вы не являетесь руководителем отдела этого сотрудника")
 
     if request.status != expected_status:
@@ -64,9 +59,7 @@ def _get_requests_for_submission(
 
 
 def list_pending_for_manager(db: Session, manager: User) -> list[LeaveRequest]:
-    managed_unit_ids = db.scalars(
-        select(OrgUnit.id).where(OrgUnit.head_user_id == manager.id, OrgUnit.is_active)
-    ).all()
+    managed_unit_ids = org_unit_service.visible_unit_ids(db, manager) or []
     if not managed_unit_ids:
         return []
     return list(
@@ -123,9 +116,7 @@ def list_approved_for_manager(db: Session, manager: User) -> list[LeaveRequest]:
     уже согласованный период (единственный, кому это доступно, кроме
     сотрудника, который больше не может отменить сам себя после согласования
     — см. leave_request_service.cancel)."""
-    managed_unit_ids = db.scalars(
-        select(OrgUnit.id).where(OrgUnit.head_user_id == manager.id, OrgUnit.is_active)
-    ).all()
+    managed_unit_ids = org_unit_service.visible_unit_ids(db, manager) or []
     if not managed_unit_ids:
         return []
     return list(

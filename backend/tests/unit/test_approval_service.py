@@ -126,6 +126,47 @@ def test_approve_covers_whole_submission(db_session, scenario):
     assert all(r.status == APPROVED for r in result)
 
 
+def test_upper_manager_approves_employee_of_child_unit(db_session):
+    lt = LeaveType(code="vacation", name_ru="Отпуск")
+    db_session.add(lt)
+    db_session.flush()
+
+    top_manager = User(email="top@test.local", full_name="Top")
+    sub_manager = User(email="sub@test.local", full_name="Sub")
+    employee = User(email="child-emp@test.local", full_name="ChildEmp")
+    db_session.add_all([top_manager, sub_manager, employee])
+    db_session.flush()
+
+    parent_unit = OrgUnit(name="Управление", head_user_id=top_manager.id, is_active=True)
+    db_session.add(parent_unit)
+    db_session.flush()
+    child_unit = OrgUnit(
+        name="Отдел", head_user_id=sub_manager.id, is_active=True, parent_id=parent_unit.id
+    )
+    db_session.add(child_unit)
+    db_session.flush()
+    employee.org_unit_id = child_unit.id
+    db_session.flush()
+
+    request = LeaveRequest(
+        user_id=employee.id,
+        leave_type_id=lt.id,
+        date_from=date(2026, 6, 1),
+        date_to=date(2026, 6, 7),
+        status=PENDING_APPROVAL,
+    )
+    db_session.add(request)
+    db_session.flush()
+
+    # Вышестоящий руководитель (parent_unit) видит и может согласовать
+    # заявку сотрудника из нижестоящего отдела (child_unit).
+    pending = approval_service.list_pending_for_manager(db_session, top_manager)
+    assert len(pending) == 1
+
+    result = approval_service.approve(db_session, top_manager, request.id, None)
+    assert result[0].status == APPROVED
+
+
 def test_list_approved_for_manager(db_session, scenario):
     approval_service.approve(db_session, scenario["manager"], scenario["request"].id, None)
     approved = approval_service.list_approved_for_manager(db_session, scenario["manager"])

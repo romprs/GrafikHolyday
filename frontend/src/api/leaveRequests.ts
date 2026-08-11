@@ -1,8 +1,14 @@
 import { apiFetch } from "./client";
 import type { LeaveBalanceOut, LeaveRequestOut, LeaveRequestWithEmployeeOut } from "./types";
 
-export function listDrafts(year?: number): Promise<LeaveRequestOut[]> {
-  return apiFetch<LeaveRequestOut[]>(`/leave-requests/drafts${year ? `?year=${year}` : ""}`);
+function qs(params: Record<string, string | number | undefined>): string {
+  const entries = Object.entries(params).filter(([, v]) => v !== undefined) as [string, string | number][];
+  if (entries.length === 0) return "";
+  return "?" + entries.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+}
+
+export function listDrafts(year?: number, onBehalfOf?: string): Promise<LeaveRequestOut[]> {
+  return apiFetch<LeaveRequestOut[]>(`/leave-requests/drafts${qs({ year, on_behalf_of: onBehalfOf })}`);
 }
 
 export function addDraft(input: {
@@ -10,6 +16,7 @@ export function addDraft(input: {
   date_to: string;
   comment?: string;
   bonus_requested?: boolean;
+  on_behalf_of?: string;
 }): Promise<LeaveRequestOut> {
   return apiFetch<LeaveRequestOut>("/leave-requests/drafts", {
     method: "POST",
@@ -28,14 +35,14 @@ export function updateDraftBonus(id: string, bonusRequested: boolean): Promise<L
   });
 }
 
-export function submitDrafts(year?: number): Promise<LeaveRequestOut[]> {
-  return apiFetch<LeaveRequestOut[]>(`/leave-requests/submit${year ? `?year=${year}` : ""}`, {
+export function submitDrafts(year?: number, onBehalfOf?: string): Promise<LeaveRequestOut[]> {
+  return apiFetch<LeaveRequestOut[]>(`/leave-requests/submit${qs({ year, on_behalf_of: onBehalfOf })}`, {
     method: "POST",
   });
 }
 
-export function listMyLeaveRequests(): Promise<LeaveRequestOut[]> {
-  return apiFetch<LeaveRequestOut[]>("/leave-requests/mine");
+export function listMyLeaveRequests(onBehalfOf?: string): Promise<LeaveRequestOut[]> {
+  return apiFetch<LeaveRequestOut[]>(`/leave-requests/mine${qs({ on_behalf_of: onBehalfOf })}`);
 }
 
 export function cancelLeaveRequest(id: string): Promise<LeaveRequestOut[]> {
@@ -71,6 +78,6 @@ export function rejectLeaveRequest(id: string, comment?: string): Promise<LeaveR
   });
 }
 
-export function getMyBalance(): Promise<LeaveBalanceOut> {
-  return apiFetch<LeaveBalanceOut>("/leave-balances/me");
+export function getMyBalance(onBehalfOf?: string): Promise<LeaveBalanceOut> {
+  return apiFetch<LeaveBalanceOut>(`/leave-balances/me${qs({ on_behalf_of: onBehalfOf })}`);
 }

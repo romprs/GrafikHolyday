@@ -1,10 +1,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { parseISO } from "date-fns";
 import { ru } from "date-fns/locale/ru";
+import { useState } from "react";
 import { DayPicker, type Matcher } from "react-day-picker";
 import "react-day-picker/style.css";
 import "../components/DateRangePicker.css";
 import { getRestrictionSettings } from "../api/calendar";
+import { listMyDelegationTargets } from "../api/delegations";
 import { cancelLeaveRequest, getMyBalance, listMyLeaveRequests } from "../api/leaveRequests";
 import type { LeaveRequestOut } from "../api/types";
 import { statusLabel } from "./statusLabel";
@@ -38,13 +40,18 @@ function groupBySubmission(requests: LeaveRequestOut[]): Submission[] {
 
 export function MyRequestsPage() {
   const queryClient = useQueryClient();
+  const [onBehalfOf, setOnBehalfOf] = useState<string | undefined>(undefined);
+  const { data: delegationTargets } = useQuery({
+    queryKey: ["delegation-targets"],
+    queryFn: listMyDelegationTargets,
+  });
   const { data: requests } = useQuery({
-    queryKey: ["my-leave-requests"],
-    queryFn: listMyLeaveRequests,
+    queryKey: ["my-leave-requests", onBehalfOf],
+    queryFn: () => listMyLeaveRequests(onBehalfOf),
   });
   const { data: balance } = useQuery({
-    queryKey: ["my-balance"],
-    queryFn: getMyBalance,
+    queryKey: ["my-balance", onBehalfOf],
+    queryFn: () => getMyBalance(onBehalfOf),
   });
   const { data: restrictionSettings } = useQuery({
     queryKey: ["restriction-settings"],
@@ -72,6 +79,22 @@ export function MyRequestsPage() {
   return (
     <div>
       <h3>Мои заявки</h3>
+      {delegationTargets && delegationTargets.length > 0 && (
+        <label>
+          Чьи заявки показать:{" "}
+          <select
+            value={onBehalfOf ?? ""}
+            onChange={(e) => setOnBehalfOf(e.target.value || undefined)}
+          >
+            <option value="">Мои</option>
+            {delegationTargets.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.full_name} ({t.email})
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       {balance && (
         <p>
           Баланс {balance.year}: начислено {balance.accrued_days}, использовано{" "}

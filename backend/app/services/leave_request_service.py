@@ -15,7 +15,7 @@ from app.models.leave_request import (
 from app.models.leave_type import LeaveType
 from app.models.restriction_settings import VACATION_BONUS
 from app.models.user import User
-from app.services import leave_balance_service, restriction_settings_service
+from app.services import delegation_service, leave_balance_service, restriction_settings_service
 from app.services.validation import engine as validation_engine
 
 
@@ -24,6 +24,17 @@ def _get_vacation_leave_type(db: Session) -> LeaveType:
     if leave_type is None:
         raise NotFoundError("Тип отсутствия 'vacation' не настроен")
     return leave_type
+
+
+def _get_actable(db: Session, actor: User, request_id: uuid.UUID) -> LeaveRequest:
+    """Заявка по id — доступна её владельцу, а также делегату/руководителю,
+    имеющему право действовать от его имени (см. delegation_service)."""
+    request = db.get(LeaveRequest, request_id)
+    if request is None:
+        raise NotFoundError("Заявка не найдена")
+    if not delegation_service.can_act_for(db, actor, request.user_id):
+        raise NotFoundError("Заявка не найдена")
+    return request
 
 
 def _validate_bonus_request(
@@ -99,11 +110,12 @@ def _check_no_active_submission(db: Session, user: User, year: int) -> None:
 
 def create_draft(
     db: Session,
-    user: User,
+    actor: User,
     date_from: date,
     date_to: date,
     comment: str | None,
     bonus_requested: bool = False,
+    on_behalf_of: uuid.UUID | None = None,
 ) -> LeaveRequest:
     """Добавляет период в текущий план отпуска (черновик — переживает
     переключение вкладок/перезагрузку страницы, в отличие от состояния формы).
@@ -115,7 +127,13 @@ def create_draft(
     остаток: get_remaining_for_new_request и own_overlap_rule учитывают
     статус draft наравне с pending/approved (см. модель LeaveRequest.STATUSES
     и services/validation/*_rule.py).
+
+    on_behalf_of — делегат/руководитель подаёт за сотрудника, который сам
+    системой не пользуется (см. delegation_service.resolve_subject); все
+    проверки (баланс, блокировки, пересечения) выполняются для него, а не
+    для actor.
     """
+    user = delegation_service.resolve_subject(db, actor, on_behalf_of)
     _check_no_active_submission(db, user, date_from.year)
     violations = validation_engine.validate_leave_request(db, user, date_from, date_to)
     if violations:
@@ -135,6 +153,7 @@ def create_draft(
         comment=comment,
         status=DRAFT,
         bonus_requested=bonus_requested,
+        acted_by=actor.id if actor.id != user.id else None,
     )
     db.add(request)
     db.commit()
@@ -143,7 +162,7 @@ def create_draft(
 
 
 def update_draft_bonus(
-    db: Session, user: User, request_id: uuid.UUID, bonus_requested: bool
+    db: Session, actor: User, request_id: uuid.UUID, bonus_requested: bool
 ) -> LeaveRequest:
     """Переключает запрос доплаты на уже добавленном черновике.
 
@@ -154,13 +173,14 @@ def update_draft_bonus(
     выбора на календаре (в отличие от чекбокса во время выбора, который
     сбрасывался при уводе мыши с календаря для клика по чекбоксу).
     """
-    request = get_own(db, user, request_id)
+    request = _get_actable(db, actor, request_id)
     if request.status != DRAFT:
         raise ForbiddenError(
             "Изменить можно только ещё не отправленный период", {"current_status": request.status}
         )
+    subject = db.get(User, request.user_id)
     _validate_bonus_request(
-        db, user, request.date_from, request.date_to, bonus_requested, exclude_request_id=request.id
+        db, subject, request.date_from, request.date_to, bonus_requested, exclude_request_id=request.id
     )
     request.bonus_requested = bonus_requested
     db.commit()
@@ -168,7 +188,10 @@ def update_draft_bonus(
     return request
 
 
-def list_drafts(db: Session, user: User, year: int) -> list[LeaveRequest]:
+def list_drafts(
+    db: Session, actor: User, year: int, on_behalf_of: uuid.UUID | None = None
+) -> list[LeaveRequest]:
+    user = delegation_service.resolve_subject(db, actor, on_behalf_of)
     year_start = date(year, 1, 1)
     year_end = date(year, 12, 31)
     return list(
@@ -185,8 +208,8 @@ def list_drafts(db: Session, user: User, year: int) -> list[LeaveRequest]:
     )
 
 
-def delete_draft(db: Session, user: User, request_id: uuid.UUID) -> None:
-    request = get_own(db, user, request_id)
+def delete_draft(db: Session, actor: User, request_id: uuid.UUID) -> None:
+    request = _get_actable(db, actor, request_id)
     if request.status != DRAFT:
         raise ForbiddenError(
             "Убрать можно только ещё не отправленный период", {"current_status": request.status}
@@ -195,7 +218,9 @@ def delete_draft(db: Session, user: User, request_id: uuid.UUID) -> None:
     db.commit()
 
 
-def submit_drafts(db: Session, user: User, year: int) -> list[LeaveRequest]:
+def submit_drafts(
+    db: Session, actor: User, year: int, on_behalf_of: uuid.UUID | None = None
+) -> list[LeaveRequest]:
     """Отправляет на согласование весь текущий план на год разом.
 
     Заявка обязана полностью выбирать доступный остаток — частичная отправка
@@ -204,6 +229,7 @@ def submit_drafts(db: Session, user: User, year: int) -> list[LeaveRequest]:
     отправить) что-то ещё в этом году уже нельзя, пока часть периодов не
     отменят/отклонят и остаток не освободится.
     """
+    user = delegation_service.resolve_subject(db, actor, on_behalf_of)
     drafts = list_drafts(db, user, year)
     if not drafts:
         raise ValidationFailedError("Нет добавленных периодов для отправки")
@@ -234,13 +260,6 @@ def submit_drafts(db: Session, user: User, year: int) -> list[LeaveRequest]:
     return drafts
 
 
-def get_own(db: Session, user: User, request_id: uuid.UUID) -> LeaveRequest:
-    request = db.get(LeaveRequest, request_id)
-    if request is None or request.user_id != user.id:
-        raise NotFoundError("Заявка не найдена")
-    return request
-
-
 def list_team_leave(db: Session, user: User, date_from: date, date_to: date) -> list[LeaveRequest]:
     """Отпуска коллег по прямому отделу — и согласованные, и на согласовании
     (черновики и отклонённые/отменённые не показываем — это не реальные
@@ -263,7 +282,8 @@ def list_team_leave(db: Session, user: User, date_from: date, date_to: date) -> 
     )
 
 
-def list_own(db: Session, user: User) -> list[LeaveRequest]:
+def list_own(db: Session, actor: User, on_behalf_of: uuid.UUID | None = None) -> list[LeaveRequest]:
+    user = delegation_service.resolve_subject(db, actor, on_behalf_of)
     return list(
         db.scalars(
             select(LeaveRequest)
@@ -273,13 +293,14 @@ def list_own(db: Session, user: User) -> list[LeaveRequest]:
     )
 
 
-def cancel(db: Session, user: User, request_id: uuid.UUID) -> list[LeaveRequest]:
-    """Сотрудник может отменить только ещё не рассмотренную заявку — и
-    заявку целиком (все периоды с тем же submission_id), а не один период
-    из неё, иначе план на год останется в смешанном/нецелостном состоянии.
-    Отмена уже согласованной — отдельное действие руководителя/HR (см.
-    approval_service.manager_cancel_approved), а не самого сотрудника."""
-    request = get_own(db, user, request_id)
+def cancel(db: Session, actor: User, request_id: uuid.UUID) -> list[LeaveRequest]:
+    """Сотрудник (или его делегат/руководитель) может отменить только ещё не
+    рассмотренную заявку — и заявку целиком (все периоды с тем же
+    submission_id), а не один период из неё, иначе план на год останется в
+    смешанном/нецелостном состоянии. Отмена уже согласованной — отдельное
+    действие руководителя/HR (см. approval_service.manager_cancel_approved),
+    а не самого сотрудника."""
+    request = _get_actable(db, actor, request_id)
     if request.status != PENDING_APPROVAL:
         raise ForbiddenError(
             "Самостоятельно отменить можно только заявку в статусе 'на согласовании'. "
@@ -303,7 +324,7 @@ def cancel(db: Session, user: User, request_id: uuid.UUID) -> list[LeaveRequest]
     for r in requests:
         r.status = CANCELLED
         r.cancelled_at = now
-        r.cancelled_by = user.id
+        r.cancelled_by = actor.id
     db.commit()
     for r in requests:
         db.refresh(r)
