@@ -22,16 +22,27 @@ Transfer that file to RED OS 8 and unpack it, then run install.sh.
 
 param(
     [Parameter(Mandatory = $true)]
-    [string]$PythonStandaloneUrl
+    [string]$PythonStandaloneUrl,
+    [switch]$AllowUnsupportedPythonBuild
 )
 
 $ErrorActionPreference = "Stop"
 
+$urlProblems = @()
 if ($PythonStandaloneUrl -match "musl") {
-    Write-Warning "URL contains 'musl' - RED OS 8 uses glibc, this build will NOT run there. Pick the 'unknown-linux-gnu' variant instead."
+    $urlProblems += "contains 'musl' - RED OS 8 uses glibc, this build will NOT run there"
 }
 if ($PythonStandaloneUrl -match "x86_64_v[234]") {
-    Write-Warning "URL targets a specific CPU microarchitecture level (v2/v3/v4) - it may fail to run on an older/different CPU. Prefer the plain 'x86_64' build unless you know the target CPU supports it."
+    $urlProblems += "targets a specific CPU microarchitecture level (v2/v3/v4) - crashes with 'Illegal instruction' on CPUs/VMs without that feature set (e.g. no AVX-512)"
+}
+if ($urlProblems.Count -gt 0) {
+    Write-Host "The Python URL looks wrong for RED OS 8:" -ForegroundColor Red
+    foreach ($p in $urlProblems) { Write-Host "  - $p" -ForegroundColor Red }
+    Write-Host "Expected a file named like: cpython-3.11.<x>+<date>-x86_64-unknown-linux-gnu-install_only.tar.gz" -ForegroundColor Yellow
+    if (-not $AllowUnsupportedPythonBuild) {
+        throw "Refusing to build with this URL. Pick the plain 'x86_64-unknown-linux-gnu' asset, or pass -AllowUnsupportedPythonBuild if you are certain this is correct for your target machine."
+    }
+    Write-Host "Continuing anyway because -AllowUnsupportedPythonBuild was passed." -ForegroundColor Yellow
 }
 
 $RootDir = Resolve-Path (Join-Path $PSScriptRoot "..\..")
