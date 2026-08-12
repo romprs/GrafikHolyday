@@ -14,6 +14,7 @@
 app/integrations/vacation_days.py и app/services/vacation_days_sync_service.py.
 """
 
+import json
 import re
 
 import httpx
@@ -94,6 +95,55 @@ def parse_employees(value: str) -> list[ExternalUserDTO]:
             )
         )
     return dtos
+
+
+def extract_value(raw_text: str) -> str:
+    """Достаёт поле "value" из сырого ответа источника. Помимо чистого
+    JSON-ответа принимает и лог-файл вида "<url>{...json...}" (реальная
+    выгрузка запроса+ответа, как она обычно и сохраняется вручную) —
+    если текст целиком не парсится как JSON, берём его с первой '{'."""
+    text = raw_text.strip()
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        brace = text.find("{")
+        if brace == -1:
+            raise ValueError("Файл не является корректным JSON-ответом источника") from None
+        try:
+            data = json.loads(text[brace:])
+        except json.JSONDecodeError as exc:
+            raise ValueError("Файл не является корректным JSON-ответом источника") from exc
+    value = data.get("value") if isinstance(data, dict) else None
+    if not isinstance(value, str):
+        raise ValueError('В файле нет строкового поля "value" — это не ответ источника')
+    return value
+
+
+class FileDirectoryClient(ExternalDirectoryClient):
+    """Тот же источник (drx), что и OrgDirectoryClient, но данные приходят
+    файлом (выгрузка/лог ответа), а не HTTP-запросом к работающему
+    источнику. system_name намеренно тот же, что у OrgDirectoryClient —
+    это разные способы доставки одних и тех же external_id, а не разные
+    источники: повторный HTTP-синк после файлового импорта (и наоборот)
+    должен обновлять те же записи, а не заводить дубли."""
+
+    def __init__(
+        self,
+        org_units: list[ExternalOrgUnitDTO] | None = None,
+        users: list[ExternalUserDTO] | None = None,
+    ):
+        self._org_units = org_units or []
+        self._users = users or []
+
+    @property
+    def system_name(self) -> str:
+        return SYSTEM_NAME
+
+    def fetch_org_units(self) -> list[ExternalOrgUnitDTO]:
+        return self._org_units
+
+    def fetch_users(self) -> list[ExternalUserDTO]:
+        return self._users
 
 
 class OrgDirectoryClient(ExternalDirectoryClient):

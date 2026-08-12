@@ -16,3 +16,13 @@ export function triggerSync(): Promise<SyncRunOut> {
 export function listSyncRuns(): Promise<SyncRunOut[]> {
   return apiFetch<SyncRunOut[]>("/admin/sync/runs");
 }
+
+export function importOrgDirectoryFile(input: {
+  departments?: string;
+  employees?: string;
+}): Promise<SyncRunOut> {
+  return apiFetch<SyncRunOut>("/admin/sync/import", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
