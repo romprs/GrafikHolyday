@@ -17,7 +17,8 @@ CHANGE_TYPES = ("created", "updated", "deactivated", "unchanged")
 # история одной интеграции засоряется чужими запусками.
 KIND_ORG_DIRECTORY = "org_directory"
 KIND_STUDY_PERIODS = "study_periods"
-SYNC_KINDS = (KIND_ORG_DIRECTORY, KIND_STUDY_PERIODS)
+KIND_VACATION_DAYS = "vacation_days"
+SYNC_KINDS = (KIND_ORG_DIRECTORY, KIND_STUDY_PERIODS, KIND_VACATION_DAYS)
 
 
 class SyncRun(UUIDPKMixin, Base):
@@ -30,7 +31,7 @@ class SyncRun(UUIDPKMixin, Base):
             "status IN ('running', 'success', 'failed', 'partial')", name="ck_sync_runs_status"
         ),
         CheckConstraint(
-            "kind IN ('org_directory', 'study_periods')", name="ck_sync_runs_kind"
+            "kind IN ('org_directory', 'study_periods', 'vacation_days')", name="ck_sync_runs_kind"
         ),
     )
 

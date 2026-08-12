@@ -75,6 +75,14 @@ export function listStudyPeriodsRuns(): Promise<SyncRunOut[]> {
   return apiFetch<SyncRunOut[]>("/admin/study-periods/runs");
 }
 
+export function triggerVacationDaysSync(): Promise<SyncRunOut> {
+  return apiFetch<SyncRunOut>("/admin/vacation-days/run", { method: "POST" });
+}
+
+export function listVacationDaysRuns(): Promise<SyncRunOut[]> {
+  return apiFetch<SyncRunOut[]>("/admin/vacation-days/runs");
+}
+
 export function createOrgUnit(input: {
   name: string;
   unit_kind?: string | null;

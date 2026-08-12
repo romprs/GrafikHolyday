@@ -144,7 +144,7 @@ export interface SyncRunOut {
   id: string;
   started_at: string;
   finished_at: string | null;
-  kind: "org_directory" | "study_periods";
+  kind: "org_directory" | "study_periods" | "vacation_days";
   trigger_type: "scheduled" | "manual";
   triggered_by: string | null;
   status: SyncRunStatus;
@@ -155,10 +155,16 @@ export interface SyncRunOut {
     employees_matched?: number;
     employees_unmatched?: number;
     employees_failed?: number;
+    employees_checked?: number;
+    employees_no_data?: number;
     periods_created?: number;
     periods_updated?: number;
     periods_unchanged?: number;
     periods_deactivated?: number;
+    balances_created?: number;
+    balances_updated?: number;
+    balances_unchanged?: number;
+    benefits_changed?: number;
     errors?: string[];
     unmatched_employee_codes?: string[];
   };

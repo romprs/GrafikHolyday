@@ -52,3 +52,8 @@ AUTH_CONFIGURATION = "auth_configuration"
 # см. app/integrations/study_periods.py. Сопоставление с сотрудником — по
 # табельному номеру (User.employee_code).
 STUDY_PERIODS_SOURCE = "study_periods_source"
+# Подключение к источнику остатка дней отпуска и признака льготника —
+# см. app/integrations/vacation_days.py. Отдельная система от оргструктуры/
+# сотрудников (drx) и от учебных планов; сопоставление тоже по табельному
+# номеру.
+VACATION_DAYS_SOURCE = "vacation_days_source"

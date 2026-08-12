@@ -7,6 +7,7 @@ from app.routers import (
     admin_study_periods,
     admin_sync,
     admin_users,
+    admin_vacation_days,
     audit,
     auth_dev,
     blocked_periods,
@@ -45,6 +46,7 @@ app.include_router(org_load.router)
 app.include_router(audit.router)
 app.include_router(admin_users.router)
 app.include_router(admin_study_periods.router)
+app.include_router(admin_vacation_days.router)
 app.include_router(delegations.router)
 
 

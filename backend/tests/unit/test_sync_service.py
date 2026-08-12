@@ -4,6 +4,7 @@ from app.models.external_id_mapping import ExternalIdMapping
 from app.models.org_unit import OrgUnit
 from app.models.user import User
 from app.services import sync_service
+from app.sync.dto import ExternalUserDTO
 from app.sync.fake_client import FakeDirectoryClient
 
 
@@ -66,3 +67,43 @@ def test_rerun_detects_field_update(db_session, client, monkeypatch):
     run = sync_service.run_sync(db_session, client, "manual", None)
     assert run.summary["users"]["updated"] == 1
     assert run.summary["users"]["unchanged"] == 7
+
+
+def test_has_benefits_none_preserves_existing_value(db_session, client, monkeypatch):
+    """Источник (например, справочник отделов/сотрудников) может не знать
+    льготность — has_benefits=None не должен затирать значение, выставленное
+    отдельным синком (vacation_days) или HR вручную."""
+    sync_service.run_sync(db_session, client, "manual", None)
+
+    target = db_session.query(User).filter_by(email="backend.head@example.com").one()
+    target.has_benefits = True
+    db_session.commit()
+
+    original_fetch = client.fetch_users
+
+    def fetch_users_with_unknown_benefits():
+        users = original_fetch()
+        for u in users:
+            u.has_benefits = None
+        return users
+
+    monkeypatch.setattr(client, "fetch_users", fetch_users_with_unknown_benefits)
+    sync_service.run_sync(db_session, client, "manual", None)
+
+    db_session.refresh(target)
+    assert target.has_benefits is True
+
+
+def test_employee_code_synced_and_not_overwritten_on_clash(db_session):
+    class CodedClient(FakeDirectoryClient):
+        def fetch_users(self):
+            users = super().fetch_users()
+            for i, u in enumerate(users):
+                u.employee_code = f"T{i:03d}"
+            return users
+
+    client = CodedClient()
+    sync_service.run_sync(db_session, client, "manual", None)
+
+    user = db_session.query(User).filter_by(email="backend.head@example.com").one()
+    assert user.employee_code == "T000"

@@ -15,6 +15,21 @@ ORG_UNIT = "org_unit"
 USER = "user"
 
 
+def _resolve_employee_code(
+    db: Session, code: str | None, current: str | None, exclude_id: uuid.UUID | None
+) -> str | None:
+    """Табельный номер уникален — если источник его в этот раз не отдал,
+    или отданный уже занят другим пользователем (аномалия исходных
+    данных), сохраняем то, что уже было (в т.ч. заведённое HR вручную),
+    вместо того чтобы затирать None-ом или ронять синк IntegrityError-ом."""
+    if not code:
+        return current
+    query = select(User.id).where(User.employee_code == code)
+    if exclude_id is not None:
+        query = query.where(User.id != exclude_id)
+    return current if db.scalar(query) is not None else code
+
+
 def _get_or_create_mapping(
     db: Session, entity_type: str, external_system: str, external_id: str
 ) -> uuid.UUID:
@@ -147,8 +162,9 @@ def run_sync(
                         email=dto.email,
                         full_name=dto.full_name,
                         org_unit_id=org_unit_id,
-                        has_benefits=dto.has_benefits,
+                        has_benefits=dto.has_benefits if dto.has_benefits is not None else False,
                         is_active=dto.is_active,
+                        employee_code=_resolve_employee_code(db, dto.employee_code, None, None),
                         last_synced_at=now,
                     )
                 )
@@ -156,8 +172,12 @@ def run_sync(
                 existing.email = dto.email
                 existing.full_name = dto.full_name
                 existing.org_unit_id = org_unit_id
-                existing.has_benefits = dto.has_benefits
+                if dto.has_benefits is not None:
+                    existing.has_benefits = dto.has_benefits
                 existing.is_active = dto.is_active
+                existing.employee_code = _resolve_employee_code(
+                    db, dto.employee_code, existing.employee_code, internal_id
+                )
                 existing.last_synced_at = now
         db.flush()
 
@@ -191,14 +211,13 @@ def run_sync(
             change_entries.append((ORG_UNIT, dto.external_id, org_unit_ids[dto.external_id], diff, change_type))
 
         for dto in user_dtos:
+            row = db.get(User, user_ids[dto.external_id])
             after = {
-                "email": dto.email,
-                "full_name": dto.full_name,
-                "org_unit_id": str(org_unit_ids.get(dto.org_unit_external_id))
-                if dto.org_unit_external_id
-                else None,
-                "has_benefits": dto.has_benefits,
-                "is_active": dto.is_active,
+                "email": row.email,
+                "full_name": row.full_name,
+                "org_unit_id": str(row.org_unit_id) if row.org_unit_id else None,
+                "has_benefits": row.has_benefits,
+                "is_active": row.is_active,
             }
             change_type, diff = _diff_fields(user_before[dto.external_id], after)
             summary["users"][change_type] += 1

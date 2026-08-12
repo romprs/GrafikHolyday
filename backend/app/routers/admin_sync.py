@@ -32,6 +32,7 @@ def _build_client(db: DbSession) -> ExternalDirectoryClient:
         departments_url=departments_url,
         login=setting.params.get("auth_login") or "",
         password=setting.params.get("auth_password") or "",
+        employees_url=setting.params.get("employees_url") or None,
         verify_tls=bool(setting.params.get("verify_tls", False)),
     )
 

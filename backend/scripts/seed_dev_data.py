@@ -25,6 +25,7 @@ from app.models.restriction_settings import (
     RestrictionSettings,
     STUDY_PERIODS_SOURCE,
     VACATION_BONUS,
+    VACATION_DAYS_SOURCE,
 )
 from app.models.user import User
 from app.models.user_role import UserRole
@@ -134,12 +135,13 @@ def seed() -> None:
                 False,
                 {
                     "departments_url": "",
+                    "employees_url": "",
                     "auth_login": "",
                     "auth_password": "",
                     "verify_tls": False,
                     "poll_interval_minutes": 60,
                 },
-                "Подключение к внешней системе-источнику оргструктуры (отделы)",
+                "Подключение к внешней системе-источнику оргструктуры (отделы и сотрудники)",
             ),
             (
                 AUTH_CONFIGURATION,
@@ -164,6 +166,12 @@ def seed() -> None:
                     "verify_tls": False,
                 },
                 "Источник учебных планов (недоступные периоды сотрудников)",
+            ),
+            (
+                VACATION_DAYS_SOURCE,
+                False,
+                {"base_url": "", "auth_login": "", "auth_password": "", "verify_tls": False},
+                "Источник остатка дней отпуска и признака льготника",
             ),
         )
         for key, enabled, params, description in default_settings:
