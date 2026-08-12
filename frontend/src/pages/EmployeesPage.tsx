@@ -113,8 +113,8 @@ export function EmployeesPage() {
     <div>
       <h3>Сотрудники — начисление дней отпуска ({year} год)</h3>
       <p style={{ color: "#888", fontSize: "0.9em" }}>
-        Пока проставляется вручную; позже будет выгружаться из внешней системы (см.
-        app/sync/rest_client.py).
+        Пока проставляется вручную; отделы и иерархия уже синхронизируются из внешней системы
+        (см. app/integrations/org_directory.py), балансы отпуска — нет.
       </p>
       <table style={{ borderCollapse: "collapse", width: "100%" }}>
         <thead>

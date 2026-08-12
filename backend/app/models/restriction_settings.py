@@ -43,9 +43,8 @@ PLANNING_YEAR = "planning_year"
 # Порог длительности отпуска (в днях), после которого можно запросить
 # дополнительную выплату к отпуску. enabled=False отключает программу целиком.
 VACATION_BONUS = "vacation_bonus"
-# Параметры подключения к внешней системе-источнику оргструктуры (базовый
-# URL, токен) — редактируется в админке, реального REST-клиента ждёт
-# app/sync/rest_client.py.
+# Параметры подключения к внешней системе-источнику оргструктуры (отделы) —
+# редактируется в админке, реальный клиент см. app/integrations/org_directory.py.
 EXTERNAL_SOURCE_CONNECTION = "external_source_connection"
 # Параметры авторизации (режим dev/oidc и реквизиты OIDC-провайдера).
 AUTH_CONFIGURATION = "auth_configuration"

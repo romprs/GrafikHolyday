@@ -241,8 +241,12 @@ function ExternalSourceForm({
 }) {
   const queryClient = useQueryClient();
   const [enabled, setEnabled] = useState(setting.enabled);
-  const [baseUrl, setBaseUrl] = useState((setting.params.base_url as string) ?? "");
-  const [apiKey, setApiKey] = useState((setting.params.api_key as string) ?? "");
+  const [departmentsUrl, setDepartmentsUrl] = useState(
+    (setting.params.departments_url as string) ?? "",
+  );
+  const [authLogin, setAuthLogin] = useState((setting.params.auth_login as string) ?? "");
+  const [authPassword, setAuthPassword] = useState((setting.params.auth_password as string) ?? "");
+  const [verifyTls, setVerifyTls] = useState(Boolean(setting.params.verify_tls));
   const [pollInterval, setPollInterval] = useState(
     (setting.params.poll_interval_minutes as number) ?? 60,
   );
@@ -251,8 +255,10 @@ function ExternalSourceForm({
 
   useEffect(() => {
     setEnabled(setting.enabled);
-    setBaseUrl((setting.params.base_url as string) ?? "");
-    setApiKey((setting.params.api_key as string) ?? "");
+    setDepartmentsUrl((setting.params.departments_url as string) ?? "");
+    setAuthLogin((setting.params.auth_login as string) ?? "");
+    setAuthPassword((setting.params.auth_password as string) ?? "");
+    setVerifyTls(Boolean(setting.params.verify_tls));
     setPollInterval((setting.params.poll_interval_minutes as number) ?? 60);
   }, [setting]);
 
@@ -262,7 +268,13 @@ function ExternalSourceForm({
     try {
       await updateRestrictionSetting("external_source_connection", {
         enabled,
-        params: { base_url: baseUrl, api_key: apiKey, poll_interval_minutes: pollInterval },
+        params: {
+          departments_url: departmentsUrl,
+          auth_login: authLogin,
+          auth_password: authPassword,
+          verify_tls: verifyTls,
+          poll_interval_minutes: pollInterval,
+        },
       });
       queryClient.invalidateQueries({ queryKey: ["restriction-settings"] });
       setSaved(true);
@@ -275,32 +287,46 @@ function ExternalSourceForm({
     <section style={{ border: "1px solid #ddd", borderRadius: 6, padding: 16 }}>
       <h4 style={{ marginTop: 0 }}>Внешний источник оргструктуры</h4>
       <p style={{ fontSize: "0.85em", color: "#888" }}>
-        Подключение к корпоративной системе, из которой синхронизируются отделы и сотрудники.
-        Пока используется тестовый (fake) клиент — реальный REST-клиент включится, когда сюда
-        будут внесены боевые параметры и подключён настоящий эндпойнт.
+        Отделы и иерархия — из GetDepartments() (Basic auth). Сотрудников источник пока не
+        предоставляет — руководители подразделений появятся, когда будет согласован отдельный
+        эндпойнт. Запуск синхронизации и история — на вкладке «Синхронизация». Пока источник
+        выключен или URL не задан, синк использует тестовые данные.
       </p>
       <label style={{ display: "block", marginBottom: 8 }}>
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />{" "}
-        Синхронизация включена
+        Источник включён
       </label>
       <label style={{ display: "block", marginBottom: 8 }}>
-        Базовый URL
+        URL GetDepartments()
         <input
           type="text"
-          value={baseUrl}
-          onChange={(e) => setBaseUrl(e.target.value)}
-          placeholder="https://hr.example.com/api"
+          value={departmentsUrl}
+          onChange={(e) => setDepartmentsUrl(e.target.value)}
+          placeholder="https://host/Integration/odata/Integration/GetDepartments()"
           style={{ display: "block", width: "100%" }}
         />
       </label>
       <label style={{ display: "block", marginBottom: 8 }}>
-        API-ключ / токен
+        Логин
         <input
-          type="password"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
+          type="text"
+          value={authLogin}
+          onChange={(e) => setAuthLogin(e.target.value)}
           style={{ display: "block", width: "100%" }}
         />
+      </label>
+      <label style={{ display: "block", marginBottom: 8 }}>
+        Пароль
+        <input
+          type="password"
+          value={authPassword}
+          onChange={(e) => setAuthPassword(e.target.value)}
+          style={{ display: "block", width: "100%" }}
+        />
+      </label>
+      <label style={{ display: "block", marginBottom: 8 }}>
+        <input type="checkbox" checked={verifyTls} onChange={(e) => setVerifyTls(e.target.checked)} />{" "}
+        Проверять TLS-сертификат
       </label>
       <label style={{ display: "block", marginBottom: 8 }}>
         Интервал синхронизации, мин.

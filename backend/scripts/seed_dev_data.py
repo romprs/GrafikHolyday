@@ -132,8 +132,14 @@ def seed() -> None:
             (
                 EXTERNAL_SOURCE_CONNECTION,
                 False,
-                {"base_url": "", "api_key": "", "poll_interval_minutes": 60},
-                "Подключение к внешней системе-источнику оргструктуры",
+                {
+                    "departments_url": "",
+                    "auth_login": "",
+                    "auth_password": "",
+                    "verify_tls": False,
+                    "poll_interval_minutes": 60,
+                },
+                "Подключение к внешней системе-источнику оргструктуры (отделы)",
             ),
             (
                 AUTH_CONFIGURATION,

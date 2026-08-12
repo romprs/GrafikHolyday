@@ -6,9 +6,10 @@ from app.sync.dto import ExternalOrgUnitDTO, ExternalUserDTO
 class ExternalDirectoryClient(ABC):
     """Граница между приложением и внешней корпоративной системой.
 
-    Конкретная реализация (REST API конкретного вендора) неизвестна на этом
-    этапе — за этим интерфейсом позже встанет rest_client.py без изменений
-    в sync_service.py и остальном приложении.
+    Реализации: FakeDirectoryClient (тестовая фикстура) и
+    app/integrations/org_directory.OrgDirectoryClient (реальный источник,
+    отделы; сотрудников источник пока не отдаёт) — sync_service.py работает
+    через этот интерфейс и не завязан на конкретную реализацию.
     """
 
     @property
