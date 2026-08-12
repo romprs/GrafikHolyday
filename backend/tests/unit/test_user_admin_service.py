@@ -1,6 +1,7 @@
 import pytest
 
-from app.core.exceptions import ForbiddenError, ValidationFailedError
+from app.core.exceptions import ForbiddenError, NotFoundError, ValidationFailedError
+from app.models.org_unit import OrgUnit
 from app.models.user import User
 from app.models.user_role import UserRole
 from app.services import permissions, user_admin_service
@@ -69,3 +70,46 @@ def test_set_employee_code_clears_with_blank(db_session, users):
     user_admin_service.set_employee_code(db_session, users["employee"].id, "2800")
     cleared = user_admin_service.set_employee_code(db_session, users["employee"].id, "  ")
     assert cleared.employee_code is None
+
+
+def test_create_user(db_session, users):
+    unit = OrgUnit(name="Отдел")
+    db_session.add(unit)
+    db_session.flush()
+
+    user = user_admin_service.create_user(
+        db_session, "new@test.local", "Новый Сотрудник", unit.id, False, "3300"
+    )
+    assert user.email == "new@test.local"
+    assert user.org_unit_id == unit.id
+    assert user.employee_code == "3300"
+
+
+def test_create_user_rejects_duplicate_email(db_session, users):
+    with pytest.raises(ValidationFailedError):
+        user_admin_service.create_user(db_session, "hr@admin.local", "Клон", None, False, None)
+
+
+def test_create_user_rejects_unknown_org_unit(db_session, users):
+    import uuid
+
+    with pytest.raises(NotFoundError):
+        user_admin_service.create_user(db_session, "new@test.local", "Новый", uuid.uuid4(), False, None)
+
+
+def test_update_user(db_session, users):
+    updated = user_admin_service.update_user(
+        db_session, users["employee"].id, "renamed@test.local", "Переименован", None, True, True
+    )
+    assert updated.email == "renamed@test.local"
+    assert updated.has_benefits is True
+
+
+def test_deactivate_user_clears_head_of_unit(db_session, users):
+    unit = OrgUnit(name="Отдел", head_user_id=users["employee"].id)
+    db_session.add(unit)
+    db_session.flush()
+
+    user_admin_service.deactivate_user(db_session, users["employee"].id)
+    db_session.refresh(unit)
+    assert unit.head_user_id is None

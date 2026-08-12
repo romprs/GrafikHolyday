@@ -36,7 +36,9 @@ def list_directory(db: DbSession, _: ManagerOrHrAdmin) -> list[DelegationTargetO
 def create_delegation(
     body: LeaveDelegationCreate, db: DbSession, user: ManagerOrHrAdmin
 ) -> LeaveDelegationOut:
-    return delegation_service.grant(db, user, body.delegate_user_id, body.target_user_id)
+    return delegation_service.grant(
+        db, user, body.delegate_user_id, body.target_user_id, body.target_org_unit_id
+    )
 
 
 @router.delete("/{delegation_id}", status_code=204)

@@ -20,3 +20,18 @@ class OrgUnitEmployeeOut(BaseModel):
     email: str
     org_unit_id: uuid.UUID | None
     role: str
+
+
+class OrgUnitCreate(BaseModel):
+    name: str
+    unit_kind: str | None = None
+    parent_id: uuid.UUID | None = None
+    head_user_id: uuid.UUID | None = None
+
+
+class OrgUnitUpdate(BaseModel):
+    name: str
+    unit_kind: str | None = None
+    parent_id: uuid.UUID | None = None
+    head_user_id: uuid.UUID | None = None
+    is_active: bool = True

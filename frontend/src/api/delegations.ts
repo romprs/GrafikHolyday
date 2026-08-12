@@ -7,7 +7,8 @@ export function listDelegations(): Promise<LeaveDelegationOut[]> {
 
 export function createDelegation(input: {
   delegate_user_id: string;
-  target_user_id: string;
+  target_user_id?: string;
+  target_org_unit_id?: string;
 }): Promise<LeaveDelegationOut> {
   return apiFetch<LeaveDelegationOut>("/delegations", {
     method: "POST",

@@ -7,7 +7,7 @@ import {
   revokeDelegation,
 } from "../api/delegations";
 import { apiFetch, ApiError } from "../api/client";
-import type { DelegationTargetOut, OrgUnitEmployeeOut } from "../api/types";
+import type { DelegationTargetOut, LeaveDelegationScope, OrgUnitEmployeeOut, OrgUnitOut } from "../api/types";
 
 export function DelegationsPage() {
   const queryClient = useQueryClient();
@@ -16,26 +16,37 @@ export function DelegationsPage() {
     queryKey: ["delegation-directory"],
     queryFn: listDelegationDirectory,
   });
-  // Цель делегирования — только сотрудники из своей зоны ответственности
-  // (для HR это все, для руководителя — своя ветка, см. /org-units/employees).
+  // Цель делегирования — только сотрудники/подразделения из своей зоны
+  // ответственности (для HR это всё, для руководителя — своя ветка).
   const { data: employees } = useQuery({
     queryKey: ["org-unit-employees"],
     queryFn: () => apiFetch<OrgUnitEmployeeOut[]>("/org-units/employees"),
   });
+  const { data: orgUnits } = useQuery({
+    queryKey: ["org-units"],
+    queryFn: () => apiFetch<OrgUnitOut[]>("/org-units"),
+  });
 
   const [delegateId, setDelegateId] = useState("");
+  const [scope, setScope] = useState<LeaveDelegationScope>("user");
   const [targetId, setTargetId] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const nameById = new Map<string, string>();
   for (const d of directory ?? []) nameById.set(d.id, `${d.full_name} (${d.email})`);
-  const target = (id: string) => nameById.get(id) ?? id;
+  const userLabel = (id: string) => nameById.get(id) ?? id;
+  const unitNameById = new Map((orgUnits ?? []).map((u) => [u.id, u.name]));
+  const unitLabel = (id: string) => unitNameById.get(id) ?? id;
 
   async function handleGrant(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     try {
-      await createDelegation({ delegate_user_id: delegateId, target_user_id: targetId });
+      await createDelegation({
+        delegate_user_id: delegateId,
+        target_user_id: scope === "user" ? targetId : undefined,
+        target_org_unit_id: scope === "org_unit" ? targetId : undefined,
+      });
       setDelegateId("");
       setTargetId("");
       queryClient.invalidateQueries({ queryKey: ["delegations"] });
@@ -57,6 +68,8 @@ export function DelegationsPage() {
       <p style={{ color: "#888", fontSize: "0.9em" }}>
         Право подавать и вести заявки на отпуск от имени сотрудника, который сам системой не
         пользуется — делегатом может быть любой сотрудник, в том числе из другого подразделения.
+        Можно делегировать одного сотрудника или сразу всё подразделение (и нижестоящие) —
+        удобно, когда за отдел отвечает один человек.
       </p>
 
       <form
@@ -82,23 +95,58 @@ export function DelegationsPage() {
           </select>
         </label>
         <label>
-          За кого (сотрудник)
+          За кого
           <select
-            value={targetId}
-            onChange={(e) => setTargetId(e.target.value)}
-            required
-            style={{ display: "block", minWidth: 240 }}
+            value={scope}
+            onChange={(e) => {
+              setScope(e.target.value as LeaveDelegationScope);
+              setTargetId("");
+            }}
+            style={{ display: "block" }}
           >
-            <option value="" disabled>
-              — выберите —
-            </option>
-            {employees?.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.full_name} ({e.email})
-              </option>
-            ))}
+            <option value="user">Одного сотрудника</option>
+            <option value="org_unit">Всё подразделение</option>
           </select>
         </label>
+        {scope === "user" ? (
+          <label>
+            Сотрудник
+            <select
+              value={targetId}
+              onChange={(e) => setTargetId(e.target.value)}
+              required
+              style={{ display: "block", minWidth: 240 }}
+            >
+              <option value="" disabled>
+                — выберите —
+              </option>
+              {employees?.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.full_name} ({e.email})
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <label>
+            Подразделение
+            <select
+              value={targetId}
+              onChange={(e) => setTargetId(e.target.value)}
+              required
+              style={{ display: "block", minWidth: 240 }}
+            >
+              <option value="" disabled>
+                — выберите —
+              </option>
+              {orgUnits?.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <button type="submit">Выдать</button>
         {error && <span style={{ color: "crimson" }}>{error}</span>}
       </form>
@@ -122,8 +170,12 @@ export function DelegationsPage() {
           )}
           {active.map((d) => (
             <tr key={d.id}>
-              <td>{target(d.delegate_user_id)}</td>
-              <td>{target(d.target_user_id)}</td>
+              <td>{userLabel(d.delegate_user_id)}</td>
+              <td>
+                {d.scope === "user"
+                  ? userLabel(d.target_user_id ?? "")
+                  : `Подразделение: ${unitLabel(d.target_org_unit_id ?? "")} (и нижестоящие)`}
+              </td>
               <td>{new Date(d.created_at).toLocaleDateString("ru-RU")}</td>
               <td>
                 <button onClick={() => handleRevoke(d.id)}>Отозвать</button>

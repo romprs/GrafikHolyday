@@ -3,6 +3,7 @@ import type {
   AuditLogOut,
   LeaveBalanceOut,
   LeaveRequestOut,
+  OrgUnitOut,
   RestrictionSettingsOut,
   SyncRunOut,
   UserWithRoleOut,
@@ -72,6 +73,59 @@ export function triggerStudyPeriodsSync(): Promise<SyncRunOut> {
 
 export function listStudyPeriodsRuns(): Promise<SyncRunOut[]> {
   return apiFetch<SyncRunOut[]>("/admin/study-periods/runs");
+}
+
+export function createOrgUnit(input: {
+  name: string;
+  unit_kind?: string | null;
+  parent_id?: string | null;
+  head_user_id?: string | null;
+}): Promise<OrgUnitOut> {
+  return apiFetch<OrgUnitOut>("/org-units", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function updateOrgUnit(
+  id: string,
+  input: {
+    name: string;
+    unit_kind?: string | null;
+    parent_id?: string | null;
+    head_user_id?: string | null;
+    is_active: boolean;
+  },
+): Promise<OrgUnitOut> {
+  return apiFetch<OrgUnitOut>(`/org-units/${id}`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export function deleteOrgUnit(id: string): Promise<OrgUnitOut> {
+  return apiFetch<OrgUnitOut>(`/org-units/${id}`, { method: "DELETE" });
+}
+
+export function createUser(input: {
+  email: string;
+  full_name: string;
+  org_unit_id?: string | null;
+  has_benefits?: boolean;
+  employee_code?: string | null;
+}): Promise<UserWithRoleOut> {
+  return apiFetch<UserWithRoleOut>("/admin/users", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function updateUser(
+  id: string,
+  input: {
+    email: string;
+    full_name: string;
+    org_unit_id?: string | null;
+    has_benefits: boolean;
+    is_active: boolean;
+  },
+): Promise<UserWithRoleOut> {
+  return apiFetch<UserWithRoleOut>(`/admin/users/${id}`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export function deleteUser(id: string): Promise<UserWithRoleOut> {
+  return apiFetch<UserWithRoleOut>(`/admin/users/${id}`, { method: "DELETE" });
 }
 
 export function setUserBalance(

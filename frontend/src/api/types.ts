@@ -188,10 +188,14 @@ export interface UserWithRoleOut {
   employee_code: string | null;
 }
 
+export type LeaveDelegationScope = "user" | "org_unit";
+
 export interface LeaveDelegationOut {
   id: string;
+  scope: LeaveDelegationScope;
   delegate_user_id: string;
-  target_user_id: string;
+  target_user_id: string | null;
+  target_org_unit_id: string | null;
   is_active: boolean;
   created_by: string;
   created_at: string;
