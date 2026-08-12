@@ -30,6 +30,43 @@ def _resolve_employee_code(
     return current if db.scalar(query) is not None else code
 
 
+def _lookup_existing_mapping(
+    db: Session, entity_type: str, external_system: str, external_id: str
+) -> uuid.UUID | None:
+    """Только чтение — в отличие от _get_or_create_mapping ничего не
+    заводит. Нужна для ссылок на сущности, которых нет в ТЕКУЩЕЙ выгрузке
+    (например, синк сотрудников без подразделений, когда подразделения уже
+    заведены прошлым запуском): такую ссылку резолвим по уже существующему
+    маппингу, а не создаём новый — иначе получим internal_id без реальной
+    строки в org_units/users и упадём на FK при записи."""
+    return db.scalar(
+        select(ExternalIdMapping.internal_id).where(
+            ExternalIdMapping.entity_type == entity_type,
+            ExternalIdMapping.external_system == external_system,
+            ExternalIdMapping.external_id == external_id,
+        )
+    )
+
+
+def _resolve_ref(
+    db: Session,
+    ids: dict[str, uuid.UUID],
+    entity_type: str,
+    external_system: str,
+    external_id: str | None,
+) -> uuid.UUID | None:
+    """Резолвит ссылку (parent_id/org_unit_id/head_user_id) по external_id
+    другой сущности: сперва среди сущностей ТЕКУЩЕЙ выгрузки (ids), иначе —
+    поиском уже существующего маппинга, если сущность синкнута раньше и
+    сейчас не входит в выгрузку (типичный случай — синк только сотрудников
+    без подразделений, ссылающихся на уже заведённые ранее подразделения)."""
+    if not external_id:
+        return None
+    if external_id in ids:
+        return ids[external_id]
+    return _lookup_existing_mapping(db, entity_type, external_system, external_id)
+
+
 def _get_or_create_mapping(
     db: Session, entity_type: str, external_system: str, external_id: str
 ) -> uuid.UUID:
@@ -117,7 +154,7 @@ def run_sync(
                 if existing
                 else None
             )
-            parent_id = org_unit_ids.get(dto.parent_external_id) if dto.parent_external_id else None
+            parent_id = _resolve_ref(db, org_unit_ids, ORG_UNIT, client.system_name, dto.parent_external_id)
             if existing is None:
                 db.add(
                     OrgUnit(
@@ -151,8 +188,8 @@ def run_sync(
                 if existing
                 else None
             )
-            org_unit_id = (
-                org_unit_ids.get(dto.org_unit_external_id) if dto.org_unit_external_id else None
+            org_unit_id = _resolve_ref(
+                db, org_unit_ids, ORG_UNIT, client.system_name, dto.org_unit_external_id
             )
             now = datetime.now(timezone.utc)
             if existing is None:
@@ -186,9 +223,7 @@ def run_sync(
         for dto in org_unit_dtos:
             internal_id = org_unit_ids[dto.external_id]
             org_unit_row = db.get(OrgUnit, internal_id)
-            head_user_id = (
-                user_ids.get(dto.head_external_id) if dto.head_external_id else None
-            )
+            head_user_id = _resolve_ref(db, user_ids, USER, client.system_name, dto.head_external_id)
             before = org_unit_before[dto.external_id]
             if before is not None:
                 before["head_user_id"] = (

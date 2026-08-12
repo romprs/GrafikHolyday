@@ -9,14 +9,12 @@ import { AuditLogPage } from "./AuditLogPage";
 import { BlockedPeriodsPage } from "./BlockedPeriodsPage";
 import { DelegationsPage } from "./DelegationsPage";
 import { roleLabel } from "./DevLoginPage";
-import { EmployeesPage } from "./EmployeesPage";
 import { IntegrationsSettingsPage } from "./IntegrationsSettingsPage";
 import { MyRequestsPage } from "./MyRequestsPage";
+import { OrgDirectoryPage } from "./OrgDirectoryPage";
 import { OrgLoadDashboardPage } from "./OrgLoadDashboardPage";
-import { OrgUnitsPage } from "./OrgUnitsPage";
 import { RequestFormPage } from "./RequestFormPage";
 import { RestrictionSettingsPage } from "./RestrictionSettingsPage";
-import { RolesPage } from "./RolesPage";
 import { SyncPage } from "./SyncPage";
 import { TeamCalendarPage } from "./TeamCalendarPage";
 
@@ -26,16 +24,14 @@ type Tab =
   | "approvals"
   | "team-calendar"
   | "blocked-periods"
-  | "org-units"
+  | "org-directory"
   | "org-load"
   | "delegations"
   | "sync"
   | "restriction-settings"
   | "integrations"
   | "all-requests"
-  | "audit-log"
-  | "employees"
-  | "roles";
+  | "audit-log";
 
 export function HomePage() {
   const { currentUser, logout } = useAuth();
@@ -78,7 +74,7 @@ export function HomePage() {
   // заявки" — переключаем на первую доступную, как только известна роль.
   useEffect(() => {
     if (currentUser?.role === "hr_admin" && (tab === "my-requests" || tab === "team-calendar")) {
-      setTab("employees");
+      setTab("org-directory");
     }
   }, [currentUser?.role, tab]);
 
@@ -97,7 +93,7 @@ export function HomePage() {
     { id: "approvals", label: "Согласование", visible: isManager },
     { id: "team-calendar", label: "Календарь отдела", visible: !isHrAdmin },
     { id: "blocked-periods", label: "Недоступные периоды", visible: isManagerOrHr },
-    { id: "org-units", label: "Оргструктура", visible: isManagerOrHr },
+    { id: "org-directory", label: "Оргструктура и сотрудники", visible: isManagerOrHr },
     { id: "org-load", label: "Загруженность отделов", visible: isManagerOrHr },
     { id: "delegations", label: "Делегирование", visible: isManagerOrHr },
     { id: "sync", label: "Синхронизация", visible: isHrAdmin },
@@ -105,8 +101,6 @@ export function HomePage() {
     { id: "integrations", label: "Интеграции", visible: isHrAdmin },
     { id: "all-requests", label: "Все заявки", visible: isHrAdmin },
     { id: "audit-log", label: "Журнал изменений", visible: isHrAdmin },
-    { id: "employees", label: "Сотрудники", visible: isHrAdmin },
-    { id: "roles", label: "Роли", visible: isHrAdmin },
   ];
 
   return (
@@ -144,7 +138,7 @@ export function HomePage() {
       {tab === "approvals" && <ApprovalQueuePage />}
       {tab === "team-calendar" && <TeamCalendarPage />}
       {tab === "blocked-periods" && <BlockedPeriodsPage />}
-      {tab === "org-units" && <OrgUnitsPage />}
+      {tab === "org-directory" && <OrgDirectoryPage />}
       {tab === "org-load" && <OrgLoadDashboardPage />}
       {tab === "delegations" && <DelegationsPage />}
       {tab === "sync" && <SyncPage />}
@@ -152,8 +146,6 @@ export function HomePage() {
       {tab === "integrations" && <IntegrationsSettingsPage />}
       {tab === "all-requests" && <AllRequestsPage />}
       {tab === "audit-log" && <AuditLogPage />}
-      {tab === "employees" && <EmployeesPage />}
-      {tab === "roles" && <RolesPage />}
     </div>
   );
 }

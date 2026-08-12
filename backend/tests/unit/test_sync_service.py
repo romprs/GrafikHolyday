@@ -107,3 +107,57 @@ def test_employee_code_synced_and_not_overwritten_on_clash(db_session):
 
     user = db_session.query(User).filter_by(email="backend.head@example.com").one()
     assert user.employee_code == "T000"
+
+
+def test_users_only_sync_resolves_org_unit_synced_in_a_previous_run(db_session, client):
+    """Баг из продакшена: загрузка файлом только сотрудников (без
+    подразделений) обнуляла org_unit_id у всех сотрудников, хотя
+    подразделения уже были заведены предыдущим синком — org_unit_ids
+    строился только из ТЕКУЩЕЙ выгрузки. Ссылка должна резолвиться через
+    уже существующий маппинг."""
+    sync_service.run_sync(db_session, client, "manual", None)
+
+    class UsersOnlyClient(FakeDirectoryClient):
+        def fetch_org_units(self):
+            return []
+
+    run = sync_service.run_sync(db_session, UsersOnlyClient(), "manual", None)
+    assert run.status == "success"
+
+    head = db_session.query(User).filter_by(email="backend.head@example.com").one()
+    dept = db_session.query(OrgUnit).filter_by(name="Отдел бэкенда").one()
+    assert head.org_unit_id == dept.id
+
+
+def test_org_units_only_sync_resolves_head_synced_in_a_previous_run(db_session, client):
+    """Тот же класс бага в обратную сторону: синк только подразделений
+    (без сотрудников) не должен обнулять head_user_id, если руководитель
+    уже был заведён предыдущим синком сотрудников."""
+    sync_service.run_sync(db_session, client, "manual", None)
+
+    class OrgUnitsOnlyClient(FakeDirectoryClient):
+        def fetch_users(self):
+            return []
+
+    run = sync_service.run_sync(db_session, OrgUnitsOnlyClient(), "manual", None)
+    assert run.status == "success"
+
+    dept = db_session.query(OrgUnit).filter_by(name="Отдел бэкенда").one()
+    head = db_session.query(User).filter_by(email="backend.head@example.com").one()
+    assert dept.head_user_id == head.id
+
+
+def test_reference_to_never_synced_entity_resolves_to_none(db_session):
+    """Ссылка на сущность, которая никогда не синкалась ни этим, ни
+    прошлым запуском (а не просто отсутствует в текущей выгрузке) —
+    остаётся None, а не роняет синк FK-ошибкой."""
+
+    class DanglingRefClient(FakeDirectoryClient):
+        def fetch_org_units(self):
+            return []
+
+    run = sync_service.run_sync(db_session, DanglingRefClient(), "manual", None)
+    assert run.status == "success"
+
+    head = db_session.query(User).filter_by(email="backend.head@example.com").one()
+    assert head.org_unit_id is None
