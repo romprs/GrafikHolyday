@@ -39,9 +39,11 @@ const roleFilterLabel: Record<"all" | EmployeeRole, string> = {
   hr_admin: "HR/админ",
 };
 
+// ФИО хранится в формате "Фамилия Имя Отчество" — фамилия первым словом
+// (см. app/integrations/org_directory.py, поле fio в реальных данных).
 function surname(fullName: string): string {
   const parts = fullName.trim().split(/\s+/);
-  return parts[parts.length - 1] ?? fullName;
+  return parts[0] ?? fullName;
 }
 
 function band(fraction: number, yellow: number, red: number): LoadBand {
@@ -163,22 +165,24 @@ export function OrgLoadDashboardPage() {
   const clickedDayLeaves = clickedDay ? leavesForDay(clickedDay) : [];
 
   return (
-    <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
-      <div style={{ flex: "1 1 700px", minWidth: 0 }}>
-        <h3>Загруженность отдела ({year} год)</h3>
-        <div>
-          <label>
-            Подразделение:{" "}
-            <select value={unitId} onChange={(e) => setSelectedUnitId(e.target.value)}>
-              {orgUnits?.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name} ({u.unit_kind})
-                </option>
-              ))}
-            </select>
-          </label>
-          {" · "}
-          <label>
+    <div>
+      <h3>Отпуска подразделений ({year} год)</h3>
+      <div>
+        <label>
+          Подразделение:{" "}
+          <select value={unitId} onChange={(e) => setSelectedUnitId(e.target.value)}>
+            {orgUnits?.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name} ({u.unit_kind})
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap", marginTop: 12 }}>
+        <div style={{ flex: "0 0 300px" }}>
+          <label style={{ display: "block", marginBottom: 6 }}>
             Роль:{" "}
             <select
               value={roleFilter}
@@ -191,26 +195,23 @@ export function OrgLoadDashboardPage() {
               ))}
             </select>
           </label>
-          {" · "}
-          <label>
-            Поиск по фамилии:{" "}
+          <label style={{ display: "block", marginBottom: 6 }}>
+            Поиск по фамилии:
             <input
               type="text"
-              placeholder="напр. Ива"
+              placeholder="напр. Иванов"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              style={{ width: 120 }}
+              style={{ display: "block", width: "100%", boxSizing: "border-box" }}
             />
           </label>
 
           <div
             style={{
-              marginTop: 8,
-              maxHeight: 160,
+              maxHeight: 480,
               overflowY: "auto",
               border: "1px solid #ddd",
               padding: 8,
-              width: 320,
             }}
           >
             {searchFilteredEmployees.length === 0 && (
@@ -233,12 +234,12 @@ export function OrgLoadDashboardPage() {
               <button onClick={() => setSelectedIds(new Set())}>Сбросить выбор</button>
             </p>
           )}
+          <p>
+            В анализе: <strong>{inScopeEmployees.length}</strong> чел.
+          </p>
         </div>
 
-      <p style={{ marginTop: 12 }}>
-        В анализе: <strong>{inScopeEmployees.length}</strong> чел.
-      </p>
-
+      <div style={{ flex: "1 1 700px", minWidth: 0 }}>
       <div style={{ overflowX: "auto" }}>
         <table style={{ borderCollapse: "collapse", fontSize: 15 }}>
           <thead>
@@ -382,6 +383,7 @@ export function OrgLoadDashboardPage() {
           <button onClick={() => setClickedDay(null)}>Закрыть</button>
         </div>
       )}
+      </div>
     </div>
   );
 }

@@ -16,13 +16,11 @@ import { OrgLoadDashboardPage } from "./OrgLoadDashboardPage";
 import { RequestFormPage } from "./RequestFormPage";
 import { RestrictionSettingsPage } from "./RestrictionSettingsPage";
 import { SyncPage } from "./SyncPage";
-import { TeamCalendarPage } from "./TeamCalendarPage";
 
 type Tab =
   | "my-requests"
   | "new-request"
   | "approvals"
-  | "team-calendar"
   | "blocked-periods"
   | "org-directory"
   | "org-load"
@@ -73,7 +71,7 @@ export function HomePage() {
   // HR-админ по умолчанию попал бы на скрытую для него вкладку "Мои
   // заявки" — переключаем на первую доступную, как только известна роль.
   useEffect(() => {
-    if (currentUser?.role === "hr_admin" && (tab === "my-requests" || tab === "team-calendar")) {
+    if (currentUser?.role === "hr_admin" && tab === "my-requests") {
       setTab("org-directory");
     }
   }, [currentUser?.role, tab]);
@@ -91,10 +89,9 @@ export function HomePage() {
     { id: "my-requests", label: "Мои заявки", visible: !isHrAdmin },
     { id: "new-request", label: "Новая заявка", visible: !isHrAdmin && !hasActiveSubmissionThisYear },
     { id: "approvals", label: "Согласование", visible: isManager },
-    { id: "team-calendar", label: "Календарь отдела", visible: !isHrAdmin },
     { id: "blocked-periods", label: "Недоступные периоды", visible: isManagerOrHr },
     { id: "org-directory", label: "Оргструктура и сотрудники", visible: isManagerOrHr },
-    { id: "org-load", label: "Загруженность отделов", visible: isManagerOrHr },
+    { id: "org-load", label: "Отпуска подразделений", visible: isManagerOrHr },
     { id: "delegations", label: "Делегирование", visible: isManagerOrHr },
     { id: "sync", label: "Синхронизация", visible: isHrAdmin },
     { id: "restriction-settings", label: "Ограничения", visible: isHrAdmin },
@@ -106,11 +103,13 @@ export function HomePage() {
   return (
     <div style={{ maxWidth: 1440, margin: "2rem auto", fontFamily: "sans-serif", padding: "0 16px" }}>
       <h1>Планирование отпусков</h1>
-      <p>
-        Вы вошли как <strong>{currentUser.full_name}</strong> ({roleLabel(currentUser.role)})
-        {currentUser.has_benefits && " — есть льготы"}
-      </p>
-      <button onClick={logout}>Выйти</button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <p style={{ margin: 0 }}>
+          Вы вошли как <strong>{currentUser.full_name}</strong> ({roleLabel(currentUser.role)})
+          {currentUser.has_benefits && " — есть льготы"}
+        </p>
+        <button onClick={logout}>Выйти</button>
+      </div>
 
       <nav style={{ display: "flex", gap: 8, margin: "16px 0", borderBottom: "1px solid #ccc", flexWrap: "wrap" }}>
         {tabs
@@ -136,7 +135,6 @@ export function HomePage() {
       {tab === "my-requests" && <MyRequestsPage />}
       {tab === "new-request" && <RequestFormPage />}
       {tab === "approvals" && <ApprovalQueuePage />}
-      {tab === "team-calendar" && <TeamCalendarPage />}
       {tab === "blocked-periods" && <BlockedPeriodsPage />}
       {tab === "org-directory" && <OrgDirectoryPage />}
       {tab === "org-load" && <OrgLoadDashboardPage />}
