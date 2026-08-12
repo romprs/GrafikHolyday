@@ -200,7 +200,7 @@ function OrgUnitForm({
       <select value={parentId} onChange={(e) => setParentId(e.target.value)}>
         <option value="">— без родителя —</option>
         {orgUnits
-          .filter((u) => state.mode !== "edit" || u.id !== state.unit.id)
+          .filter((u) => u.is_active && (state.mode !== "edit" || u.id !== state.unit.id))
           .map((u) => (
             <option key={u.id} value={u.id}>
               {u.name}
@@ -586,9 +586,24 @@ function OrgUnitRow({
     }
   }
 
+  async function handleReactivateUnit() {
+    try {
+      await updateOrgUnit(node.unit.id, {
+        name: node.unit.name,
+        unit_kind: node.unit.unit_kind,
+        parent_id: node.unit.parent_id,
+        head_user_id: node.unit.head_user_id,
+        is_active: true,
+      });
+      onSaved();
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Не удалось активировать подразделение");
+    }
+  }
+
   return (
     <>
-      <tr style={{ background: "#f2f5fa" }}>
+      <tr style={{ background: "#f2f5fa", opacity: node.unit.is_active ? 1 : 0.55 }}>
         <td
           style={{ ...td, paddingLeft: 8 + depth * 18, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
           colSpan={isHrAdmin ? ADMIN_COLS - 1 : READONLY_COLS}
@@ -604,6 +619,7 @@ function OrgUnitRow({
           {node.unit.name}
           {node.unit.unit_kind && <span style={{ fontWeight: 400, color: "#888" }}> ({node.unit.unit_kind})</span>}
           <span style={{ fontWeight: 400, color: "#aaa" }}> [{employeesHere.length}]</span>
+          {!node.unit.is_active && <span style={{ fontWeight: 600, color: "#b33" }}> — неактивно</span>}
         </td>
         {isHrAdmin && (
           <>
@@ -612,25 +628,33 @@ function OrgUnitRow({
                 <button type="button" style={actionBtn} onClick={() => setUnitEditState({ mode: "edit", unit: node.unit })}>
                   изменить
                 </button>
-                <button
-                  type="button"
-                  style={actionBtn}
-                  onClick={() => setUnitEditState({ mode: "create", parentId: node.unit.id })}
-                  title="Добавить подраздел"
-                >
-                  + отдел
-                </button>
-                <button
-                  type="button"
-                  style={actionBtn}
-                  onClick={() => setCreatingEmployeeUnitId(node.unit.id)}
-                  title="Добавить сотрудника"
-                >
-                  + раб.
-                </button>
-                <button type="button" style={actionBtn} onClick={handleDeleteUnit}>
-                  деакт.
-                </button>
+                {node.unit.is_active ? (
+                  <>
+                    <button
+                      type="button"
+                      style={actionBtn}
+                      onClick={() => setUnitEditState({ mode: "create", parentId: node.unit.id })}
+                      title="Добавить подраздел"
+                    >
+                      + отдел
+                    </button>
+                    <button
+                      type="button"
+                      style={actionBtn}
+                      onClick={() => setCreatingEmployeeUnitId(node.unit.id)}
+                      title="Добавить сотрудника"
+                    >
+                      + раб.
+                    </button>
+                    <button type="button" style={actionBtn} onClick={handleDeleteUnit}>
+                      деакт.
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" style={actionBtn} onClick={handleReactivateUnit}>
+                    актив.
+                  </button>
+                )}
               </div>
             </td>
           </>
@@ -827,18 +851,31 @@ export function OrgDirectoryPage() {
   // совпадение будет "не видно" за свёрнутым родителем.
   const forceExpanded = useMemo(() => {
     const ids = new Set<string>();
-    if (!filtersActive || !visibleEmployeeIds || !orgUnits) return ids;
+    if (!filtersActive || !orgUnits) return ids;
     const parentOf = new Map(orgUnits.map((u) => [u.id, u.parent_id]));
-    for (const e of employees) {
-      if (!visibleEmployeeIds.has(e.id) || !e.org_unit_id) continue;
-      let cur: string | null = e.org_unit_id;
+    if (visibleEmployeeIds) {
+      for (const e of employees) {
+        if (!visibleEmployeeIds.has(e.id) || !e.org_unit_id) continue;
+        let cur: string | null = e.org_unit_id;
+        while (cur && !ids.has(cur)) {
+          ids.add(cur);
+          cur = parentOf.get(cur) ?? null;
+        }
+      }
+    }
+    // Явно выбранное в фильтре подразделение (и путь до корня) видно
+    // всегда, даже если в нём и во всей его ветке нет ни одного подходящего
+    // сотрудника — иначе пустые/деактивированные подразделения "теряются"
+    // из вида при фильтрации по подразделению.
+    if (unitFilter) {
+      let cur: string | null = unitFilter;
       while (cur && !ids.has(cur)) {
         ids.add(cur);
         cur = parentOf.get(cur) ?? null;
       }
     }
     return ids;
-  }, [filtersActive, visibleEmployeeIds, employees, orgUnits]);
+  }, [filtersActive, visibleEmployeeIds, employees, orgUnits, unitFilter]);
 
   function toggleExpanded(id: string) {
     setExpanded((prev) => {
@@ -900,6 +937,7 @@ export function OrgDirectoryPage() {
           {(orgUnits ?? []).map((u) => (
             <option key={u.id} value={u.id}>
               {u.name}
+              {!u.is_active && " (неактивно)"}
             </option>
           ))}
         </select>

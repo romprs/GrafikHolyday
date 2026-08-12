@@ -18,11 +18,15 @@ HrAdmin = Annotated[User, Depends(require_role(permissions.HR_ADMIN))]
 @router.get("", response_model=list[OrgUnitOut])
 def list_org_units(db: DbSession, user: CurrentUser) -> list[OrgUnitOut]:
     """Рядовой сотрудник оргструктуру не видит вовсе; руководитель видит
-    только свою ветку (свой юнит и всё, что ниже — см.
-    org_unit_service.visible_unit_ids); HR/админ — всё."""
+    только свою активную ветку (свой юнит и всё, что ниже — см.
+    org_unit_service.visible_unit_ids); HR/админ — всё, включая
+    деактивированные подразделения — иначе их нельзя ни найти, ни
+    реактивировать (кнопка «деактивировать» на странице становится
+    билетом в один конец)."""
     visible = org_unit_service.visible_unit_ids(db, user)
-    query = select(OrgUnit).where(OrgUnit.is_active).order_by(OrgUnit.name)
+    query = select(OrgUnit).order_by(OrgUnit.name)
     if visible is not None:
+        query = query.where(OrgUnit.is_active)
         if not visible:
             return []
         query = query.where(OrgUnit.id.in_(visible))
