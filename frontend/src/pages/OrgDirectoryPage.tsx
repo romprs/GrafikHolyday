@@ -589,7 +589,10 @@ function OrgUnitRow({
   return (
     <>
       <tr style={{ background: "#f2f5fa" }}>
-        <td style={{ ...td, paddingLeft: 8 + depth * 18, fontWeight: 600 }} colSpan={isHrAdmin ? 1 : READONLY_COLS}>
+        <td
+          style={{ ...td, paddingLeft: 8 + depth * 18, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+          colSpan={isHrAdmin ? ADMIN_COLS - 1 : READONLY_COLS}
+        >
           <button
             type="button"
             onClick={() => toggleExpanded(node.unit.id)}
@@ -604,7 +607,6 @@ function OrgUnitRow({
         </td>
         {isHrAdmin && (
           <>
-            <td style={td} colSpan={ADMIN_COLS - 2} />
             <td style={actionsCell}>
               <div style={actionsWrap}>
                 <button type="button" style={actionBtn} onClick={() => setUnitEditState({ mode: "edit", unit: node.unit })}>
