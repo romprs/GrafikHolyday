@@ -20,6 +20,40 @@ import { useAuth } from "../auth/AuthContext";
 import type { EmployeeRole, OrgUnitEmployeeOut, OrgUnitOut } from "../api/types";
 import { roleLabel } from "./DevLoginPage";
 
+const ADMIN_COLS = 9;
+const READONLY_COLS = 3;
+
+const th: React.CSSProperties = {
+  textAlign: "left",
+  padding: "6px 8px",
+  borderBottom: "2px solid #ccc",
+  fontSize: "0.8em",
+  color: "#555",
+  fontWeight: 600,
+  whiteSpace: "nowrap",
+};
+const td: React.CSSProperties = {
+  padding: "4px 8px",
+  borderBottom: "1px solid #eee",
+  verticalAlign: "middle",
+};
+const actionsCell: React.CSSProperties = {
+  ...td,
+  textAlign: "right",
+};
+const actionsWrap: React.CSSProperties = {
+  display: "flex",
+  gap: 4,
+  justifyContent: "flex-end",
+  flexWrap: "wrap",
+};
+const actionBtn: React.CSSProperties = {
+  fontSize: "0.78em",
+  padding: "2px 6px",
+  whiteSpace: "nowrap",
+};
+const numInput: React.CSSProperties = { width: 52 };
+
 // Единая форма отображения сотрудника — независимо от того, откуда данные
 // пришли: полный набор полей от /admin/users (только hr_admin) или
 // облегчённый /org-units/employees (доступен и руководителю, read-only).
@@ -85,6 +119,16 @@ function matchesFilters(
   return true;
 }
 
+// Руководитель подразделения — всегда первой строкой, остальные по алфавиту.
+function sortWithHeadFirst(list: DisplayEmployee[], headUserId: string | null): DisplayEmployee[] {
+  return list.slice().sort((a, b) => {
+    const aHead = a.id === headUserId ? 0 : 1;
+    const bHead = b.id === headUserId ? 0 : 1;
+    if (aHead !== bHead) return aHead - bHead;
+    return a.full_name.localeCompare(b.full_name);
+  });
+}
+
 type UnitEditState = { mode: "create"; parentId: string | null } | { mode: "edit"; unit: OrgUnitOut };
 
 function OrgUnitForm({
@@ -138,16 +182,7 @@ function OrgUnitForm({
   return (
     <form
       onSubmit={handleSubmit}
-      style={{
-        display: "flex",
-        gap: 6,
-        flexWrap: "wrap",
-        alignItems: "center",
-        margin: "6px 0",
-        padding: 8,
-        background: "#f0f4ff",
-        borderRadius: 4,
-      }}
+      style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}
     >
       <input
         value={name}
@@ -255,16 +290,7 @@ function EmployeeForm({
   return (
     <form
       onSubmit={handleSubmit}
-      style={{
-        display: "flex",
-        gap: 6,
-        flexWrap: "wrap",
-        alignItems: "center",
-        margin: "4px 0",
-        padding: 8,
-        background: "#f7f7f7",
-        borderRadius: 4,
-      }}
+      style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}
     >
       <input
         value={fullName}
@@ -316,7 +342,7 @@ function EmployeeForm({
   );
 }
 
-function BalanceInline({ userId, year }: { userId: string; year: number }) {
+function useBalanceEditor(userId: string, year: number) {
   const queryClient = useQueryClient();
   const { data: balance } = useQuery({
     queryKey: ["user-balance", userId, year],
@@ -341,37 +367,21 @@ function BalanceInline({ userId, year }: { userId: string; year: number }) {
     }
   }
 
-  if (!balance) return null;
-
-  return (
-    <span style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: "0.85em" }}>
-      начислено{" "}
-      <input
-        type="number"
-        min={0}
-        style={{ width: 50 }}
-        value={accrued === "" ? balance.accrued_days : accrued}
-        onChange={(e) => setAccrued(e.target.value)}
-      />
-      перенесено{" "}
-      <input
-        type="number"
-        min={0}
-        style={{ width: 50 }}
-        value={carriedOver === "" ? balance.carried_over_days : carriedOver}
-        onChange={(e) => setCarriedOver(e.target.value)}
-      />
-      остаток: <strong>{balance.remaining_days}</strong>
-      <button onClick={handleSave}>Сохранить</button>
-      {error && <span style={{ color: "crimson" }}>{error}</span>}
-    </span>
-  );
+  return {
+    balance,
+    accrued: accrued === "" ? String(balance?.accrued_days ?? "") : accrued,
+    setAccrued,
+    carriedOver: carriedOver === "" ? String(balance?.carried_over_days ?? "") : carriedOver,
+    setCarriedOver,
+    remaining: balance?.remaining_days,
+    handleSave,
+    error,
+  };
 }
 
-function EmployeeRow({
+function EmployeeRowAdmin({
   employee,
   orgUnits,
-  isHrAdmin,
   currentUserId,
   year,
   editing,
@@ -380,7 +390,6 @@ function EmployeeRow({
 }: {
   employee: DisplayEmployee;
   orgUnits: OrgUnitOut[];
-  isHrAdmin: boolean;
   currentUserId: string | undefined;
   year: number;
   editing: boolean;
@@ -388,6 +397,7 @@ function EmployeeRow({
   onSaved: () => void;
 }) {
   const queryClient = useQueryClient();
+  const balanceEditor = useBalanceEditor(employee.id, year);
 
   async function handleDeactivate() {
     if (!confirm("Деактивировать сотрудника? Он больше не сможет войти в систему.")) return;
@@ -414,61 +424,99 @@ function EmployeeRow({
 
   if (editing) {
     return (
-      <li>
-        <EmployeeForm
-          orgUnits={orgUnits}
-          initial={employee}
-          defaultOrgUnitId={employee.org_unit_id}
-          onSaved={() => {
-            setEditing(null);
-            onSaved();
-          }}
-          onCancel={() => setEditing(null)}
-        />
-      </li>
+      <tr>
+        <td colSpan={ADMIN_COLS} style={{ ...td, background: "#f7f7f7" }}>
+          <EmployeeForm
+            orgUnits={orgUnits}
+            initial={employee}
+            defaultOrgUnitId={employee.org_unit_id}
+            onSaved={() => {
+              setEditing(null);
+              onSaved();
+            }}
+            onCancel={() => setEditing(null)}
+          />
+        </td>
+      </tr>
     );
   }
 
+  const nameColor = employee.role === "employee" ? "inherit" : "#2e7d32";
+
   return (
-    <li
-      style={{
-        display: "flex",
-        flexWrap: "wrap",
-        gap: 8,
-        alignItems: "center",
-        padding: "2px 0",
-        opacity: employee.is_active === false ? 0.5 : 1,
-        color: employee.role === "employee" ? "inherit" : "#2e7d32",
-      }}
-    >
-      <span>
-        {employee.full_name} ({employee.email})
-        {employee.role !== "employee" && ` — ${roleLabel(employee.role)}`}
-        {employee.has_benefits && " — льготник"}
-        {employee.employee_code && ` — таб. № ${employee.employee_code}`}
-        {employee.is_active === false && " — деактивирован"}
-      </span>
-      {isHrAdmin && (
-        <span style={{ display: "flex", gap: 6, fontSize: "0.85em" }}>
-          <BalanceInline userId={employee.id} year={year} />
-          <button type="button" onClick={() => setEditing(employee.id)}>
+    <tr style={{ opacity: employee.is_active === false ? 0.5 : 1 }}>
+      <td style={{ ...td, paddingLeft: 34, color: nameColor }}>
+        {employee.full_name}
+        {employee.is_active === false && " (деактивирован)"}
+      </td>
+      <td style={td}>{employee.email}</td>
+      <td style={td}>{roleLabel(employee.role)}</td>
+      <td style={td}>{employee.employee_code || "—"}</td>
+      <td style={{ ...td, textAlign: "center" }} title={employee.has_benefits ? "Льготник" : ""}>
+        {employee.has_benefits ? "✓" : "—"}
+      </td>
+      <td style={td}>
+        <input
+          type="number"
+          min={0}
+          style={numInput}
+          value={balanceEditor.accrued}
+          onChange={(e) => balanceEditor.setAccrued(e.target.value)}
+        />
+      </td>
+      <td style={td}>
+        <input
+          type="number"
+          min={0}
+          style={numInput}
+          value={balanceEditor.carriedOver}
+          onChange={(e) => balanceEditor.setCarriedOver(e.target.value)}
+        />
+      </td>
+      <td style={{ ...td, fontWeight: 600 }}>{balanceEditor.remaining ?? "—"}</td>
+      <td style={actionsCell}>
+        <div style={actionsWrap}>
+          <button type="button" style={actionBtn} onClick={balanceEditor.handleSave} title="Сохранить баланс">
+            баланс
+          </button>
+          <button type="button" style={actionBtn} onClick={() => setEditing(employee.id)}>
             изменить
           </button>
-          <button type="button" onClick={handleRoleToggle} disabled={employee.id === currentUserId}>
-            {employee.role === "hr_admin" ? "забрать HR-admin" : "выдать HR-admin"}
+          <button
+            type="button"
+            style={actionBtn}
+            onClick={handleRoleToggle}
+            disabled={employee.id === currentUserId}
+            title={employee.role === "hr_admin" ? "Забрать роль HR-admin" : "Выдать роль HR-admin"}
+          >
+            {employee.role === "hr_admin" ? "−HR" : "+HR"}
           </button>
           {employee.is_active !== false && (
-            <button type="button" onClick={handleDeactivate}>
+            <button type="button" style={actionBtn} onClick={handleDeactivate}>
               деактивировать
             </button>
           )}
-        </span>
-      )}
-    </li>
+        </div>
+        {balanceEditor.error && (
+          <div style={{ color: "crimson", fontSize: "0.75em", textAlign: "right" }}>{balanceEditor.error}</div>
+        )}
+      </td>
+    </tr>
   );
 }
 
-function OrgUnitNode({
+function EmployeeRowReadOnly({ employee }: { employee: DisplayEmployee }) {
+  const nameColor = employee.role === "employee" ? "inherit" : "#2e7d32";
+  return (
+    <tr>
+      <td style={{ ...td, paddingLeft: 34, color: nameColor }}>{employee.full_name}</td>
+      <td style={td}>{employee.email}</td>
+      <td style={td}>{roleLabel(employee.role)}</td>
+    </tr>
+  );
+}
+
+function OrgUnitRow({
   node,
   depth,
   employeesByUnit,
@@ -511,11 +559,14 @@ function OrgUnitNode({
   onSaved: () => void;
   filtersActive: boolean;
 }) {
+  const cols = isHrAdmin ? ADMIN_COLS : READONLY_COLS;
   const isOpen = filtersActive ? forceExpanded.has(node.unit.id) : expanded.has(node.unit.id);
-  const employeesHere = (employeesByUnit.get(node.unit.id) ?? []).filter(
-    (e) => !visibleEmployeeIds || visibleEmployeeIds.has(e.id),
+  const employeesHere = sortWithHeadFirst(
+    (employeesByUnit.get(node.unit.id) ?? []).filter(
+      (e) => !visibleEmployeeIds || visibleEmployeeIds.has(e.id),
+    ),
+    node.unit.head_user_id,
   );
-  const head = allEmployees.find((e) => e.id === node.unit.head_user_id);
   const isEditingThis = unitEditState?.mode === "edit" && unitEditState.unit.id === node.unit.id;
   const isAddingChildHere = unitEditState?.mode === "create" && unitEditState.parentId === node.unit.id;
   const isAddingEmployeeHere = creatingEmployeeUnitId === node.unit.id;
@@ -536,50 +587,57 @@ function OrgUnitNode({
   }
 
   return (
-    <div style={{ marginLeft: depth === 0 ? 0 : 20, marginTop: 6 }}>
-      <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
-        <button
-          type="button"
-          onClick={() => toggleExpanded(node.unit.id)}
-          style={{
-            border: "none",
-            background: "none",
-            cursor: "pointer",
-            width: 18,
-            fontWeight: 700,
-            padding: 0,
-          }}
-          title={isOpen ? "Свернуть" : "Развернуть"}
-        >
-          {isOpen ? "▾" : "▸"}
-        </button>
-        <span>
+    <>
+      <tr style={{ background: "#f2f5fa" }}>
+        <td style={{ ...td, paddingLeft: 8 + depth * 18, fontWeight: 600 }} colSpan={isHrAdmin ? 1 : READONLY_COLS}>
+          <button
+            type="button"
+            onClick={() => toggleExpanded(node.unit.id)}
+            style={{ border: "none", background: "none", cursor: "pointer", width: 16, fontWeight: 700, padding: 0 }}
+            title={isOpen ? "Свернуть" : "Развернуть"}
+          >
+            {isOpen ? "▾" : "▸"}
+          </button>{" "}
           {node.unit.name}
           {node.unit.unit_kind && <span style={{ fontWeight: 400, color: "#888" }}> ({node.unit.unit_kind})</span>}
-          {head && <span style={{ fontWeight: 400, color: "#888" }}> — рук. {head.full_name}</span>}
           <span style={{ fontWeight: 400, color: "#aaa" }}> [{employeesHere.length}]</span>
-        </span>
+        </td>
         {isHrAdmin && (
-          <span style={{ fontWeight: 400, fontSize: "0.85em" }}>
-            <button type="button" onClick={() => setUnitEditState({ mode: "edit", unit: node.unit })}>
-              изменить
-            </button>{" "}
-            <button type="button" onClick={() => setUnitEditState({ mode: "create", parentId: node.unit.id })}>
-              + подраздел
-            </button>{" "}
-            <button type="button" onClick={() => setCreatingEmployeeUnitId(node.unit.id)}>
-              + сотрудник
-            </button>{" "}
-            <button type="button" onClick={handleDeleteUnit}>
-              деактивировать
-            </button>
-          </span>
+          <>
+            <td style={td} colSpan={ADMIN_COLS - 2} />
+            <td style={actionsCell}>
+              <div style={actionsWrap}>
+                <button type="button" style={actionBtn} onClick={() => setUnitEditState({ mode: "edit", unit: node.unit })}>
+                  изменить
+                </button>
+                <button
+                  type="button"
+                  style={actionBtn}
+                  onClick={() => setUnitEditState({ mode: "create", parentId: node.unit.id })}
+                  title="Добавить подраздел"
+                >
+                  + отдел
+                </button>
+                <button
+                  type="button"
+                  style={actionBtn}
+                  onClick={() => setCreatingEmployeeUnitId(node.unit.id)}
+                  title="Добавить сотрудника"
+                >
+                  + раб.
+                </button>
+                <button type="button" style={actionBtn} onClick={handleDeleteUnit}>
+                  деакт.
+                </button>
+              </div>
+            </td>
+          </>
         )}
-      </div>
+      </tr>
 
-      {isOpen && (
-        <>
-          {isEditingThis && (
+      {isOpen && isEditingThis && (
+        <tr>
+          <td colSpan={cols} style={{ ...td, background: "#eef2ff" }}>
             <OrgUnitForm
               orgUnits={orgUnits}
               employees={allEmployees}
@@ -590,8 +648,12 @@ function OrgUnitNode({
               }}
               onCancel={() => setUnitEditState(null)}
             />
-          )}
-          {isAddingChildHere && (
+          </td>
+        </tr>
+      )}
+      {isOpen && isAddingChildHere && (
+        <tr>
+          <td colSpan={cols} style={{ ...td, background: "#eef2ff" }}>
             <OrgUnitForm
               orgUnits={orgUnits}
               employees={allEmployees}
@@ -602,8 +664,12 @@ function OrgUnitNode({
               }}
               onCancel={() => setUnitEditState(null)}
             />
-          )}
-          {isAddingEmployeeHere && (
+          </td>
+        </tr>
+      )}
+      {isOpen && isAddingEmployeeHere && (
+        <tr>
+          <td colSpan={cols} style={{ ...td, background: "#f7f7f7" }}>
             <EmployeeForm
               orgUnits={orgUnits}
               initial={null}
@@ -614,54 +680,55 @@ function OrgUnitNode({
               }}
               onCancel={() => setCreatingEmployeeUnitId(undefined)}
             />
-          )}
+          </td>
+        </tr>
+      )}
 
-          {employeesHere.length > 0 && (
-            <ul style={{ margin: "2px 0 2px 26px", padding: 0, listStyle: "none" }}>
-              {employeesHere.map((e) => (
-                <EmployeeRow
-                  key={e.id}
-                  employee={e}
-                  orgUnits={orgUnits}
-                  isHrAdmin={isHrAdmin}
-                  currentUserId={currentUserId}
-                  year={year}
-                  editing={editingEmployeeId === e.id}
-                  setEditing={setEditingEmployeeId}
-                  onSaved={onSaved}
-                />
-              ))}
-            </ul>
-          )}
-
-          {node.children.map((child) => (
-            <OrgUnitNode
-              key={child.unit.id}
-              node={child}
-              depth={depth + 1}
-              employeesByUnit={employeesByUnit}
-              visibleEmployeeIds={visibleEmployeeIds}
-              forceExpanded={forceExpanded}
-              expanded={expanded}
-              toggleExpanded={toggleExpanded}
+      {isOpen &&
+        employeesHere.map((e) =>
+          isHrAdmin ? (
+            <EmployeeRowAdmin
+              key={e.id}
+              employee={e}
               orgUnits={orgUnits}
-              allEmployees={allEmployees}
-              isHrAdmin={isHrAdmin}
               currentUserId={currentUserId}
               year={year}
-              unitEditState={unitEditState}
-              setUnitEditState={setUnitEditState}
-              editingEmployeeId={editingEmployeeId}
-              setEditingEmployeeId={setEditingEmployeeId}
-              creatingEmployeeUnitId={creatingEmployeeUnitId}
-              setCreatingEmployeeUnitId={setCreatingEmployeeUnitId}
+              editing={editingEmployeeId === e.id}
+              setEditing={setEditingEmployeeId}
               onSaved={onSaved}
-              filtersActive={filtersActive}
             />
-          ))}
-        </>
-      )}
-    </div>
+          ) : (
+            <EmployeeRowReadOnly key={e.id} employee={e} />
+          ),
+        )}
+
+      {isOpen &&
+        node.children.map((child) => (
+          <OrgUnitRow
+            key={child.unit.id}
+            node={child}
+            depth={depth + 1}
+            employeesByUnit={employeesByUnit}
+            visibleEmployeeIds={visibleEmployeeIds}
+            forceExpanded={forceExpanded}
+            expanded={expanded}
+            toggleExpanded={toggleExpanded}
+            orgUnits={orgUnits}
+            allEmployees={allEmployees}
+            isHrAdmin={isHrAdmin}
+            currentUserId={currentUserId}
+            year={year}
+            unitEditState={unitEditState}
+            setUnitEditState={setUnitEditState}
+            editingEmployeeId={editingEmployeeId}
+            setEditingEmployeeId={setEditingEmployeeId}
+            creatingEmployeeUnitId={creatingEmployeeUnitId}
+            setCreatingEmployeeUnitId={setCreatingEmployeeUnitId}
+            onSaved={onSaved}
+            filtersActive={filtersActive}
+          />
+        ))}
+    </>
   );
 }
 
@@ -790,6 +857,7 @@ export function OrgDirectoryPage() {
 
   const unassignedVisible = unassigned.filter((e) => !visibleEmployeeIds || visibleEmployeeIds.has(e.id));
   const showUnassigned = unassignedVisible.length > 0 && (!unitFilter || !filtersActive);
+  const cols = isHrAdmin ? ADMIN_COLS : READONLY_COLS;
 
   return (
     <div>
@@ -797,7 +865,7 @@ export function OrgDirectoryPage() {
       <p style={{ color: "#888", fontSize: "0.9em" }}>
         Подразделения и сотрудники синхронизируются из внешней системы (вкладка «Синхронизация») —
         здесь можно скорректировать вручную: сопоставление с подразделением, льготы, табельный
-        номер, роль HR-admin.
+        номер, роль HR-admin. Руководитель подразделения всегда показан первым в списке.
       </p>
 
       <div
@@ -852,72 +920,123 @@ export function OrgDirectoryPage() {
         </div>
       )}
       {isHrAdmin && unitEditState?.mode === "create" && unitEditState.parentId === null && (
-        <OrgUnitForm
-          orgUnits={orgUnits ?? []}
-          employees={employees}
-          state={unitEditState}
-          onSaved={refresh}
-          onCancel={() => setUnitEditState(null)}
-        />
+        <div style={{ margin: "6px 0", padding: 8, background: "#eef2ff", borderRadius: 4 }}>
+          <OrgUnitForm
+            orgUnits={orgUnits ?? []}
+            employees={employees}
+            state={unitEditState}
+            onSaved={refresh}
+            onCancel={() => setUnitEditState(null)}
+          />
+        </div>
       )}
       {isHrAdmin && creatingEmployeeUnitId === null && (
-        <EmployeeForm
-          orgUnits={orgUnits ?? []}
-          initial={null}
-          defaultOrgUnitId={null}
-          onSaved={refresh}
-          onCancel={() => setCreatingEmployeeUnitId(undefined)}
-        />
+        <div style={{ margin: "6px 0", padding: 8, background: "#f7f7f7", borderRadius: 4 }}>
+          <EmployeeForm
+            orgUnits={orgUnits ?? []}
+            initial={null}
+            defaultOrgUnitId={null}
+            onSaved={refresh}
+            onCancel={() => setCreatingEmployeeUnitId(undefined)}
+          />
+        </div>
       )}
 
-      {tree.map((node) => (
-        <OrgUnitNode
-          key={node.unit.id}
-          node={node}
-          depth={0}
-          employeesByUnit={employeesByUnit}
-          visibleEmployeeIds={visibleEmployeeIds}
-          forceExpanded={forceExpanded}
-          expanded={expanded}
-          toggleExpanded={toggleExpanded}
-          orgUnits={orgUnits ?? []}
-          allEmployees={employees}
-          isHrAdmin={isHrAdmin}
-          currentUserId={currentUser?.id}
-          year={year}
-          unitEditState={unitEditState}
-          setUnitEditState={setUnitEditState}
-          editingEmployeeId={editingEmployeeId}
-          setEditingEmployeeId={setEditingEmployeeId}
-          creatingEmployeeUnitId={creatingEmployeeUnitId}
-          setCreatingEmployeeUnitId={setCreatingEmployeeUnitId}
-          onSaved={refresh}
-          filtersActive={filtersActive}
-        />
-      ))}
-
-      {showUnassigned && (
-        <div style={{ marginTop: 16 }}>
-          <div style={{ fontWeight: 600, color: "#888" }}>
-            Без подразделения <span style={{ color: "#aaa" }}>[{unassignedVisible.length}]</span>
-          </div>
-          <ul style={{ margin: "4px 0 4px 20px", padding: 0, listStyle: "none" }}>
-            {unassignedVisible.map((e) => (
-              <EmployeeRow
-                key={e.id}
-                employee={e}
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+          <colgroup>
+            {isHrAdmin ? (
+              <>
+                <col style={{ width: "22%" }} />
+                <col style={{ width: "16%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "7%" }} />
+                <col style={{ width: "6%" }} />
+                <col style={{ width: "6%" }} />
+                <col style={{ width: "6%" }} />
+                <col style={{ width: "5%" }} />
+                <col style={{ width: "23%" }} />
+              </>
+            ) : (
+              <>
+                <col style={{ width: "40%" }} />
+                <col style={{ width: "35%" }} />
+                <col style={{ width: "25%" }} />
+              </>
+            )}
+          </colgroup>
+          <thead>
+            <tr>
+              <th style={th}>Сотрудник / подразделение</th>
+              <th style={th}>Email</th>
+              <th style={th}>Роль</th>
+              {isHrAdmin && (
+                <>
+                  <th style={th}>Таб. №</th>
+                  <th style={{ ...th, textAlign: "center" }}>Льготы</th>
+                  <th style={th}>Начислено</th>
+                  <th style={th}>Перенесено</th>
+                  <th style={th}>Остаток</th>
+                  <th style={{ ...th, textAlign: "right" }}>Действия</th>
+                </>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {tree.map((node) => (
+              <OrgUnitRow
+                key={node.unit.id}
+                node={node}
+                depth={0}
+                employeesByUnit={employeesByUnit}
+                visibleEmployeeIds={visibleEmployeeIds}
+                forceExpanded={forceExpanded}
+                expanded={expanded}
+                toggleExpanded={toggleExpanded}
                 orgUnits={orgUnits ?? []}
+                allEmployees={employees}
                 isHrAdmin={isHrAdmin}
                 currentUserId={currentUser?.id}
                 year={year}
-                editing={editingEmployeeId === e.id}
-                setEditing={setEditingEmployeeId}
+                unitEditState={unitEditState}
+                setUnitEditState={setUnitEditState}
+                editingEmployeeId={editingEmployeeId}
+                setEditingEmployeeId={setEditingEmployeeId}
+                creatingEmployeeUnitId={creatingEmployeeUnitId}
+                setCreatingEmployeeUnitId={setCreatingEmployeeUnitId}
                 onSaved={refresh}
+                filtersActive={filtersActive}
               />
             ))}
-          </ul>
-        </div>
-      )}
+
+            {showUnassigned && (
+              <>
+                <tr style={{ background: "#f2f5fa" }}>
+                  <td style={{ ...td, fontWeight: 600 }} colSpan={cols}>
+                    Без подразделения <span style={{ fontWeight: 400, color: "#aaa" }}>[{unassignedVisible.length}]</span>
+                  </td>
+                </tr>
+                {unassignedVisible.map((e) =>
+                  isHrAdmin ? (
+                    <EmployeeRowAdmin
+                      key={e.id}
+                      employee={e}
+                      orgUnits={orgUnits ?? []}
+                      currentUserId={currentUser?.id}
+                      year={year}
+                      editing={editingEmployeeId === e.id}
+                      setEditing={setEditingEmployeeId}
+                      onSaved={refresh}
+                    />
+                  ) : (
+                    <EmployeeRowReadOnly key={e.id} employee={e} />
+                  ),
+                )}
+              </>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
