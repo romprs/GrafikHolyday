@@ -19,6 +19,12 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
 ]
+# Только для KERBEROS_MODE=python — на PyPI нет готовых manylinux-колёс
+# (пакет линкуется с системной библиотекой Kerberos), в офлайн-бандле это
+# отдельный шаг сборки, см. deploy/redos8/README.md.
+kerberos = [
+    "gssapi>=1.8",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

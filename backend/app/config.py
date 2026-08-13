@@ -18,9 +18,19 @@ class Settings(BaseSettings):
     # на которое заходят пользователи (часть SPN вида HTTP/<hostname>@REALM);
     # заполняется, когда IT выдаст keytab под конкретный хост — до этого
     # момента kerberos-провайдер не может быть включён.
+    #
+    # kerberos_mode переключает, КТО именно проверяет SPNEGO-тикет:
+    #   "nginx"  — nginx (mod_auth_gssapi) уже проверил тикет и передаёт
+    #              подтверждённый логин в заголовке kerberos_trusted_header;
+    #              бэкенд Kerberos вообще не касается, keytab лежит у nginx.
+    #   "python" — бэкенд сам проверяет SPNEGO через python-gssapi,
+    #              используя kerberos_keytab_path; nginx тут — обычный
+    #              прозрачный прокси. См. app/auth/kerberos_provider.py.
     kerberos_realm: str = "CORP.AMURGPZ.RU"
     kerberos_server_hostname: str | None = None
     kerberos_keytab_path: str | None = None
+    kerberos_mode: str = "nginx"  # "nginx" | "python"
+    kerberos_trusted_header: str = "X-Remote-User"
 
     cors_origins: list[str] = ["http://localhost:5173"]
 

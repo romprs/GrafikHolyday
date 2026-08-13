@@ -24,6 +24,19 @@ class ForbiddenError(DomainError):
     code = "FORBIDDEN"
 
 
+class AuthChallengeError(DomainError):
+    """401 с заголовком WWW-Authenticate — нужен именно этот статус (не 403),
+    чтобы клиент (браузер, curl --negotiate) понял, что должен предъявить
+    Kerberos-тикет, а не просто получил отказ. См. app/auth/kerberos_provider.py."""
+
+    http_status = status.HTTP_401_UNAUTHORIZED
+    code = "AUTH_CHALLENGE"
+
+    def __init__(self, message_ru: str, www_authenticate: str, params: dict | None = None):
+        super().__init__(message_ru, params)
+        self.www_authenticate = www_authenticate
+
+
 class ValidationFailedError(DomainError):
     """Нарушено одно или несколько бизнес-правил (валидатор заявки и т.п.)."""
 
@@ -39,6 +52,11 @@ class ConflictError(DomainError):
 
 
 async def domain_error_handler(request: Request, exc: DomainError) -> JSONResponse:
+    headers = (
+        {"WWW-Authenticate": exc.www_authenticate}
+        if isinstance(exc, AuthChallengeError)
+        else None
+    )
     return JSONResponse(
         status_code=exc.http_status,
         content={
@@ -46,6 +64,7 @@ async def domain_error_handler(request: Request, exc: DomainError) -> JSONRespon
             "message_ru": exc.message_ru,
             "params": exc.params,
         },
+        headers=headers,
     )
 
 

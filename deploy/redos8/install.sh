@@ -71,6 +71,18 @@ fi
 "$INSTALL_DIR/venv/bin/pip" install --no-index --find-links="$BUNDLE_DIR/wheelhouse" \
     -e "$INSTALL_DIR/app/backend[dev]"
 
+# python-gssapi (нужен только для KERBEROS_MODE=python, см. README) не
+# входит в основной набор зависимостей выше — на PyPI нет готовых
+# manylinux-колёс под него, а требовать его для всех установок (в т.ч. с
+# KERBEROS_MODE=nginx или AUTH_PROVIDER=dev) было бы лишним. Если такое
+# колесо руками положили в wheelhouse (см. README, раздел про
+# KERBEROS_MODE=python) — ставим его; если нет — тихо пропускаем, это не
+# ошибка установки.
+if compgen -G "$BUNDLE_DIR/wheelhouse/gssapi-*.whl" > /dev/null; then
+    echo "    Найден gssapi в wheelhouse — ставлю (для KERBEROS_MODE=python)"
+    "$INSTALL_DIR/venv/bin/pip" install --no-index --find-links="$BUNDLE_DIR/wheelhouse" gssapi
+fi
+
 echo "==> [4/7] Настраиваю .env (не трогаю, если уже существует)"
 if [[ ! -f "$INSTALL_DIR/app/backend/.env" ]]; then
     cp "$BUNDLE_DIR/.env.example" "$INSTALL_DIR/app/backend/.env"

@@ -1,9 +1,10 @@
 from typing import Annotated
 
-from fastapi import Depends, Header
+from fastapi import Depends, Header, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.auth import kerberos_provider
 from app.auth.dev_provider import resolve_dev_identity
 from app.config import settings
 from app.core.exceptions import ForbiddenError
@@ -15,17 +16,31 @@ DbSession = Annotated[Session, Depends(get_db)]
 
 
 def get_current_user(
+    request: Request,
     db: DbSession,
     x_dev_user_id: Annotated[str | None, Header()] = None,
     authorization: Annotated[str | None, Header()] = None,
 ) -> User:
     if settings.auth_provider == "dev":
         identity = resolve_dev_identity(x_dev_user_id)
+        user = db.scalar(select(User).where(User.id == identity.user_id, User.is_active))
+    elif settings.auth_provider == "kerberos":
+        if settings.kerberos_mode == "nginx":
+            raw = request.headers.get(settings.kerberos_trusted_header)
+            if not raw:
+                raise ForbiddenError(
+                    f"Отсутствует заголовок {settings.kerberos_trusted_header} — запрос должен "
+                    "идти через nginx с настроенным mod_auth_gssapi"
+                )
+            login = kerberos_provider.login_from_trusted_header(raw)
+        elif settings.kerberos_mode == "python":
+            login = kerberos_provider.get_gssapi_provider().authenticate(authorization)
+        else:
+            raise ForbiddenError(f"Неизвестный режим KERBEROS_MODE: {settings.kerberos_mode!r}")
+        user = kerberos_provider.resolve_login(db, login)
     else:
-        # Phase 5: OIDCAuthProvider().resolve_identity(authorization)
         raise ForbiddenError("Провайдер аутентификации не поддерживается")
 
-    user = db.scalar(select(User).where(User.id == identity.user_id, User.is_active))
     if user is None:
         raise ForbiddenError("Пользователь не найден или деактивирован")
     return user

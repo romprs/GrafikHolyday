@@ -99,13 +99,63 @@ sudo ./install.sh
   этой схеме — тот же origin, что и nginx, поэтому CORS фактически не
   используется, но пусть будет корректным);
 - `AUTH_PROVIDER` — по умолчанию `dev` (вход под тестовым пользователем,
-  без реального SSO). Для боевой эксплуатации решено использовать
-  `kerberos` (Kerberos/SPNEGO через AD-домен `corp.amurgpz.ru`) — заполните
-  `KERBEROS_SERVER_HOSTNAME` и `KERBEROS_KEYTAB_PATH`, когда IT выдаст
-  keytab под конкретный сервер. Сам провайдер ещё не подключён на бэкенде
-  (см. открытые допущения в плане реализации) — пока переменные только
-  зарезервированы под будущее включение. Оставлять `dev` в проде — осознанный
+  без реального SSO). Для боевой эксплуатации — `kerberos` (Kerberos/SPNEGO
+  через AD-домен `corp.amurgpz.ru`). Оставлять `dev` в проде — осознанный
   временный шаг, не забудьте про него.
+
+#### Kerberos — какой режим выбрать (`KERBEROS_MODE`)
+
+Два режима реализованы оба, переключение — одной переменной, без правок
+кода. Разница в том, какой уровень проверяет сам SPNEGO-тикет:
+
+1. **`KERBEROS_MODE=nginx`** — тикет проверяет nginx через модуль с
+   директивами `auth_gssapi_*` (образец конфига —
+   `nginx-gssapi.conf.example` в этой папке). Бэкенд Kerberos вообще не
+   касается: не хранит keytab, не требует `python-gssapi`. Работает,
+   только если у вас на сервере уже есть (или можно поставить) такой
+   модуль nginx — стандартная сборка `nginx.org` его не включает, это
+   отдельный пакет (в RHEL-семействе обычно вида `nginx-mod-auth-gssapi`).
+   Проверить прямо на сервере:
+   ```bash
+   dnf list --available | grep -i auth-gssapi
+   ls /usr/lib64/nginx/modules/ 2>/dev/null | grep -i gssapi
+   ```
+   Если ничего не находится ни в одном подключённом локальном
+   репозитории — этот режим недоступен без сборки модуля из исходников,
+   используйте `python` вместо него.
+
+2. **`KERBEROS_MODE=python`** — тикет проверяет сам бэкенд через пакет
+   `python-gssapi`, используя `KERBEROS_KEYTAB_PATH`. nginx в этом случае
+   — обычный прозрачный прокси. У `python-gssapi` нет готовых
+   manylinux-колёс на PyPI (пакет линкуется с системной библиотекой
+   Kerberos) — для офлайн-бандла его нужно собрать отдельно:
+   - на машине с сетевым доступом **и той же версией glibc, что на РЕД
+     ОС 8** (проще всего — временная РЕД ОС 8 виртуалка/контейнер)
+     поставьте `krb5-devel gcc python3-devel` из локальных репозиториев,
+     затем соберите колесо под тот же портативный Python 3.11, что в
+     бандле:
+     ```bash
+     /opt/vacation-planner/python/bin/python3.11 -m pip wheel gssapi -w /tmp/gssapi-wheel
+     ```
+   - скопируйте получившийся `.whl` в `wheelhouse/` бандла (рядом с
+     остальными зависимостями) до запуска `install.sh` — он подхватит
+     его автоматически (см. шаг 3 в списке установки выше), но не
+     упадёt, если файла нет (тогда `KERBEROS_MODE=python` работать не
+     будет, а старт сервиса явно скажет об этом в логе — см. ниже).
+
+В обоих режимах нужно заполнить `KERBEROS_SERVER_HOSTNAME` (конкретное
+имя сервера, часть SPN вида `HTTP/<hostname>@CORP.AMURGPZ.RU`) — когда
+IT выдаст keytab под конкретный хост. `KERBEROS_KEYTAB_PATH` нужен только
+в режиме `python` (в режиме `nginx` keytab лежит у nginx, не у бэкенда —
+путь указывается прямо в конфиге nginx, `auth_gssapi_keytab`).
+
+Если конфигурация Kerberos неполная или битая (нет `python-gssapi`, не
+задан `KERBEROS_SERVER_HOSTNAME`, keytab не читается) — сервис
+`vacation-backend` не запустится и явно скажет, чего не хватает:
+```bash
+sudo systemctl status vacation-backend
+sudo journalctl -u vacation-backend -n 50
+```
 
 После правки `.env`:
 
@@ -136,5 +186,6 @@ curl http://<адрес-сервера>/health       # через nginx
 | `build-bundle.ps1` / `build-bundle.sh` | Собрать офлайн-бандл на машине с интернетом |
 | `install.sh` | Установка/обновление на РЕД ОС 8 |
 | `nginx-vacation.conf` | Шаблон конфига nginx (статика + прокси `/api`) |
+| `nginx-gssapi.conf.example` | Образец `location /api/` для KERBEROS_MODE=nginx (не устанавливается автоматически) |
 | `vacation-backend.service` | Шаблон systemd-юнита бэкенда |
 | `.env.example` | Шаблон `backend/.env` для продуктива |

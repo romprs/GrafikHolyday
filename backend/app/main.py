@@ -35,6 +35,18 @@ from app.routers import (
 
 app = FastAPI(title="Планирование отпусков", version="0.1.0")
 
+
+@app.on_event("startup")
+def _validate_kerberos_config() -> None:
+    # KERBEROS_MODE=python грузит keytab и собирает GSS-credentials один раз
+    # здесь — чтобы битая конфигурация (нет python-gssapi, не задан
+    # KERBEROS_SERVER_HOSTNAME/KERBEROS_KEYTAB_PATH, keytab не читается)
+    # роняла запуск сервиса сразу, а не первый же вход пользователя.
+    if settings.auth_provider == "kerberos" and settings.kerberos_mode == "python":
+        from app.auth.kerberos_provider import get_gssapi_provider
+
+        get_gssapi_provider()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,

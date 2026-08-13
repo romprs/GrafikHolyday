@@ -1,0 +1,60 @@
+# Пример конфигурации nginx для KERBEROS_MODE=nginx (backend/.env) — SPNEGO
+# проверяет nginx, бэкенд получает уже подтверждённый логин в заголовке
+# X-Remote-User (совпадает с backend/.env: KERBEROS_TRUSTED_HEADER).
+#
+# ВНИМАНИЕ: это НЕ готовый к установке файл (в отличие от
+# nginx-vacation.conf), а образец — под конкретный сервер нужно проверить
+# и, скорее всего, поправить пути/имена модуля, см. пункты ниже. Возьмите
+# из этого файла только location /api/ и добавьте недостающие директивы в
+# уже установленный /etc/nginx/conf.d/vacation-planner.conf (вместо его
+# исходного location /api/).
+#
+# 1. Нужен модуль nginx с директивами auth_gssapi_* — GSSAPI-версия nginx
+#    из коробки (nginx.org) её не содержит, это отдельный динамический
+#    модуль (в RHEL-семействе обычно пакет вида nginx-mod-auth-gssapi).
+#    Проверить на сервере:
+#      dnf list --available | grep -i auth-gssapi   # доступен ли пакет
+#      ls /usr/lib64/nginx/modules/ | grep -i gssapi # уже установлен?
+#    Если пакета нет ни в одном подключённом репозитории — этот вариант
+#    (KERBEROS_MODE=nginx) недоступен на этом сервере без сборки модуля
+#    из исходников; тогда используйте KERBEROS_MODE=python вместо этого.
+#
+# 2. Keytab-файл нужен nginx (не бэкенду) — положить туда, где его сможет
+#    прочитать процесс nginx (обычно пользователь nginx/www-data), права
+#    0600, владелец — пользователь, от которого работает nginx.
+
+# В /etc/nginx/nginx.conf (главный контекст, НЕ внутри server{}) добавить,
+# если модуль ставится как динамический (уточнить точное имя .so файла):
+# load_module modules/ngx_http_auth_gssapi_module.so;
+
+server {
+    listen 80 default_server;
+    server_name _;
+
+    root __INSTALL_DIR__/frontend-dist;
+    index index.html;
+
+    location /api/ {
+        auth_gssapi_keytab /etc/vacation-planner/vacation.keytab;
+        auth_gssapi_realm CORP.AMURGPZ.RU;
+        auth_gssapi_allow_basic_fallback off;
+
+        proxy_pass http://127.0.0.1:8000/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # $remote_user после успешной GSSAPI-проверки — это принципал
+        # вида "login@CORP.AMURGPZ.RU"; бэкенд сам отрезает "@REALM"
+        # (см. app/auth/kerberos_provider.py), передавать можно как есть.
+        proxy_set_header X-Remote-User $remote_user;
+    }
+
+    location /health {
+        proxy_pass http://127.0.0.1:8000/health;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
