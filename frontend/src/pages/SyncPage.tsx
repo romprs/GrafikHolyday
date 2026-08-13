@@ -110,6 +110,7 @@ export function SyncPage() {
             <th style={{ textAlign: "left" }}>Статус</th>
             <th style={{ textAlign: "left" }}>Оргюниты</th>
             <th style={{ textAlign: "left" }}>Сотрудники</th>
+            <th style={{ textAlign: "left" }}>Ошибка</th>
           </tr>
         </thead>
         <tbody>
@@ -124,6 +125,9 @@ export function SyncPage() {
               <td>
                 {r.summary.users &&
                   `создано ${r.summary.users.created}, обновлено ${r.summary.users.updated}, без изменений ${r.summary.users.unchanged}`}
+              </td>
+              <td style={{ color: "crimson", maxWidth: 420, wordBreak: "break-word" }}>
+                {r.error_message}
               </td>
             </tr>
           ))}

@@ -15,12 +15,15 @@ app/integrations/vacation_days.py и app/services/vacation_days_sync_service.py.
 """
 
 import json
+import logging
 import re
 
 import httpx
 
 from app.sync.dto import ExternalOrgUnitDTO, ExternalUserDTO
 from app.sync.interface import ExternalDirectoryClient
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_NAME = "org_directory_rest"
 
@@ -167,9 +170,37 @@ class OrgDirectoryClient(ExternalDirectoryClient):
         return SYSTEM_NAME
 
     def _fetch_value(self, url: str) -> str:
-        response = httpx.get(url, auth=self._auth, verify=self._verify_tls, timeout=self._timeout)
-        response.raise_for_status()
-        return response.json()["value"]
+        logger.info("Запрос к источнику оргструктуры: GET %s", url)
+        try:
+            response = httpx.get(url, auth=self._auth, verify=self._verify_tls, timeout=self._timeout)
+        except httpx.RequestError as exc:
+            logger.error("Не удалось соединиться с %s: %s", url, exc)
+            raise RuntimeError(f"Не удалось соединиться с {url}: {exc}") from exc
+
+        logger.info("Ответ от %s: HTTP %s, %d байт", url, response.status_code, len(response.content))
+        if response.is_error:
+            body_preview = response.text[:500]
+            logger.error(
+                "Источник оргструктуры вернул ошибку: GET %s -> HTTP %s. Тело ответа: %s",
+                url,
+                response.status_code,
+                body_preview,
+            )
+            raise RuntimeError(
+                f"Источник ответил HTTP {response.status_code} на {url}"
+                + (f": {body_preview}" if body_preview else "")
+            )
+
+        try:
+            return extract_value(response.text)
+        except ValueError as exc:
+            logger.error(
+                "Не удалось разобрать ответ источника (%s): %s. Тело ответа (начало): %s",
+                url,
+                exc,
+                response.text[:500],
+            )
+            raise
 
     def fetch_org_units(self) -> list[ExternalOrgUnitDTO]:
         return parse_departments(self._fetch_value(self._departments_url))

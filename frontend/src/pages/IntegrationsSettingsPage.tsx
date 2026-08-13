@@ -63,6 +63,17 @@ function RunSummary({ run }: { run: SyncRunOut }) {
           {!!s.employees_failed && `, ошибок запроса: ${s.employees_failed}`}
         </>
       )}
+      {run.error_message && (
+        <div style={{ color: "crimson", whiteSpace: "pre-wrap" }}>{run.error_message}</div>
+      )}
+      {!!s.errors?.length && (
+        <ul style={{ color: "crimson", margin: "2px 0 0 0", paddingLeft: 18 }}>
+          {s.errors.slice(0, 5).map((e, i) => (
+            <li key={i}>{e}</li>
+          ))}
+          {s.errors.length > 5 && <li>…и ещё {s.errors.length - 5}</li>}
+        </ul>
+      )}
     </span>
   );
 }

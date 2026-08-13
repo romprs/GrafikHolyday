@@ -6,6 +6,7 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://vacation:vacation@localhost:5432/vacation"
     auth_provider: str = "dev"  # "dev" | "oidc"
+    log_level: str = "INFO"
 
     oidc_issuer: str | None = None
     oidc_client_id: str | None = None

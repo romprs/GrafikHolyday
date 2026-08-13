@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -10,6 +11,8 @@ from app.models.sync import KIND_ORG_DIRECTORY, SyncChangeLog, SyncRun
 from app.models.user import User
 from app.sync.dto import ExternalOrgUnitDTO, ExternalUserDTO
 from app.sync.interface import ExternalDirectoryClient
+
+logger = logging.getLogger(__name__)
 
 ORG_UNIT = "org_unit"
 USER = "user"
@@ -125,9 +128,21 @@ def run_sync(
     }
     change_entries: list[tuple[str, str, uuid.UUID, dict]] = []  # entity_type, ext_id, internal_id, before
 
+    logger.info(
+        "Синхронизация оргструктуры: начало (run_id=%s, trigger=%s, источник=%s)",
+        run.id,
+        trigger_type,
+        client.system_name,
+    )
     try:
         org_unit_dtos = client.fetch_org_units()
         user_dtos = client.fetch_users()
+        logger.info(
+            "Синхронизация оргструктуры: получено подразделений=%d, сотрудников=%d (run_id=%s)",
+            len(org_unit_dtos),
+            len(user_dtos),
+            run.id,
+        )
 
         org_unit_ids = {
             dto.external_id: _get_or_create_mapping(db, ORG_UNIT, client.system_name, dto.external_id)
@@ -271,9 +286,13 @@ def run_sync(
             )
 
         run.status = "success"
+        logger.info(
+            "Синхронизация оргструктуры: успешно завершена (run_id=%s), сводка: %s", run.id, summary
+        )
     except Exception as exc:  # noqa: BLE001 — фиксируем любую ошибку синка в run, не роняем процесс
         run.status = "failed"
         run.error_message = str(exc)
+        logger.exception("Синхронизация оргструктуры завершилась ошибкой (run_id=%s)", run.id)
 
     run.summary = summary
     run.finished_at = datetime.now(timezone.utc)

@@ -1,8 +1,20 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.core.exceptions import register_exception_handlers
+
+# Без этого логи из logging.getLogger(__name__) в сервисах/интеграциях (в
+# частности — синхронизации, см. app/services/sync_service.py и
+# app/integrations/org_directory.py) никуда не выводятся: у Python-логгера
+# по умолчанию нет обработчика. basicConfig пишет в stdout, что при
+# systemd-запуске (см. deploy/redos8) уходит в journalctl -u vacation-backend.
+logging.basicConfig(
+    level=settings.log_level,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 from app.routers import (
     admin_study_periods,
     admin_sync,

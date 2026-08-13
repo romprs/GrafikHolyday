@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import date, datetime, timezone
 
@@ -8,6 +9,8 @@ from app.integrations.study_periods import StudyPeriodEntryDTO, StudyPeriodsClie
 from app.models.blocked_period import USER, BlockedPeriod
 from app.models.sync import KIND_STUDY_PERIODS, SyncChangeLog, SyncRun
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 STUDY_PERIOD = "study_period"
 # Помечает BlockedPeriod, созданные этой интеграцией — чтобы повторный синк
@@ -137,6 +140,12 @@ def _apply(
     else:
         run.status = "success"
 
+    logger.info(
+        "Синхронизация недоступных периодов: завершена (run_id=%s), статус=%s, сводка: %s",
+        run.id,
+        run.status,
+        summary,
+    )
     run.summary = summary
     run.finished_at = datetime.now(timezone.utc)
     db.commit()
@@ -169,5 +178,10 @@ def run_http_sync(
             all_raw.extend(client.fetch_raw(user.employee_code, period_from, period_to))
         except Exception as exc:  # noqa: BLE001 — один сбойный сотрудник не должен рвать весь синк
             errors[user.employee_code] = f"{user.employee_code}: {exc}"
+            logger.warning(
+                "Синхронизация недоступных периодов: сбой запроса по табельному номеру %s: %s",
+                user.employee_code,
+                exc,
+            )
     entries = parse_entries(all_raw)
     return _apply(db, entries, errors, trigger_type, triggered_by)

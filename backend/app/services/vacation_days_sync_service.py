@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -8,6 +9,8 @@ from app.integrations.vacation_days import VacationDaysClient
 from app.models.leave_balance import LeaveBalance
 from app.models.sync import KIND_VACATION_DAYS, SyncChangeLog, SyncRun
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 VACATION_DAYS_ENTITY = "vacation_days"
 
@@ -44,6 +47,12 @@ def run_sync(
     users = list(
         db.scalars(select(User).where(User.employee_code.isnot(None), User.is_active)).all()
     )
+    logger.info(
+        "Синхронизация дней отпуска: начало (run_id=%s, trigger=%s), сотрудников к проверке=%d",
+        run.id,
+        trigger_type,
+        len(users),
+    )
 
     for user in users:
         summary["employees_checked"] += 1
@@ -52,6 +61,12 @@ def run_sync(
         except Exception as exc:  # noqa: BLE001 — один сбойный сотрудник не должен рвать весь синк
             summary["employees_failed"] += 1
             summary["errors"].append(f"{user.employee_code}: {exc}")
+            logger.warning(
+                "Синхронизация дней отпуска: сбой запроса по табельному номеру %s (run_id=%s): %s",
+                user.employee_code,
+                run.id,
+                exc,
+            )
             continue
 
         if entry is None:
@@ -97,6 +112,12 @@ def run_sync(
     else:
         run.status = "success"
 
+    logger.info(
+        "Синхронизация дней отпуска: завершена (run_id=%s), статус=%s, сводка: %s",
+        run.id,
+        run.status,
+        summary,
+    )
     run.summary = summary
     run.finished_at = datetime.now(timezone.utc)
     db.commit()
