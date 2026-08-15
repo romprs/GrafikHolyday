@@ -362,10 +362,15 @@ export function OrgLoadDashboardPage() {
           <ul style={{ margin: "4px 0 0 0", paddingLeft: 20 }}>
             {clickedDayLeaves.map((l) => {
               const employee = employeesById.get(l.user_id);
+              const fullName = employee?.full_name ?? "—";
               return (
                 <li key={l.id} style={{ marginBottom: 6 }}>
-                  {employee?.full_name ?? "—"}
-                  {" — "}
+                  <div
+                    title={fullName}
+                    style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                  >
+                    {fullName}
+                  </div>
                   <span style={{ color: l.status === "approved" ? "#2e7d32" : "#a06a00" }}>
                     {statusLabel[l.status] ?? l.status}
                   </span>
