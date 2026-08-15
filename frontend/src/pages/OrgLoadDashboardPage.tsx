@@ -218,13 +218,19 @@ export function OrgLoadDashboardPage() {
               <p style={{ color: "#888", margin: 0 }}>Никого не найдено.</p>
             )}
             {searchFilteredEmployees.map((e) => (
-              <label key={e.id} style={{ display: "block" }}>
+              <label
+                key={e.id}
+                title={e.full_name}
+                style={{ display: "flex", alignItems: "center", gap: 4 }}
+              >
                 <input
                   type="checkbox"
                   checked={selectedIds.has(e.id)}
                   onChange={() => toggleSelected(e.id)}
-                />{" "}
-                {e.full_name}
+                />
+                <span style={{ minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                  {e.full_name}
+                </span>
               </label>
             ))}
           </div>
