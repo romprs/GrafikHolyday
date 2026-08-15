@@ -110,7 +110,7 @@ export function HomePage() {
   ];
 
   return (
-    <div style={{ maxWidth: 1440, margin: "2rem auto", fontFamily: "sans-serif", padding: "0 16px" }}>
+    <div style={{ maxWidth: 2000, margin: "2rem auto", fontFamily: "sans-serif", padding: "0 16px" }}>
       <h1>Планирование отпусков</h1>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <p style={{ margin: 0 }}>

@@ -186,7 +186,7 @@ export function OrgLoadDashboardPage() {
       </div>
 
       <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap", marginTop: 12 }}>
-        <div style={{ flex: "0 0 300px" }}>
+        <div style={{ flex: "0 0 300px", minWidth: 0 }}>
           <label style={{ display: "block", marginBottom: 6 }}>
             Роль:{" "}
             <select
@@ -215,6 +215,7 @@ export function OrgLoadDashboardPage() {
             style={{
               maxHeight: 480,
               overflowY: "auto",
+              overflowX: "hidden",
               border: "1px solid #ddd",
               padding: 8,
             }}
@@ -250,7 +251,7 @@ export function OrgLoadDashboardPage() {
           </p>
         </div>
 
-      <div style={{ flex: "1 1 700px", minWidth: 0 }}>
+      <div style={{ flex: "0 1 auto", minWidth: 0 }}>
       <div style={{ overflowX: "auto" }}>
         <table style={{ borderCollapse: "collapse", fontSize: 15 }}>
           <thead>
@@ -373,77 +374,62 @@ export function OrgLoadDashboardPage() {
 
       {clickedDay && (
         <div
-          onClick={() => setClickedDay(null)}
           style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.35)",
-            zIndex: 99,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            flex: "0 0 260px",
+            border: "1px solid #ccc",
+            borderRadius: 6,
+            padding: 12,
+            maxHeight: "70vh",
+            overflowY: "auto",
+            position: "sticky",
+            top: 16,
           }}
         >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: 320,
-              maxWidth: "90vw",
-              maxHeight: "80vh",
-              overflowY: "auto",
-              border: "1px solid #ccc",
-              borderRadius: 6,
-              padding: 12,
-              background: "#fff",
-              boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-              <strong>{format(parseISO(clickedDay), "dd.MM.yyyy")}</strong>
-              <button
-                type="button"
-                onClick={() => setClickedDay(null)}
-                title="Закрыть"
-                style={{
-                  border: "none",
-                  background: "none",
-                  cursor: "pointer",
-                  fontSize: 20,
-                  lineHeight: 1,
-                  padding: 0,
-                  color: "#888",
-                }}
-              >
-                ×
-              </button>
-            </div>
-            <ul style={{ margin: "8px 0 0 0", paddingLeft: 20 }}>
-              {clickedDayLeaves.map((l) => {
-                const employee = employeesById.get(l.user_id);
-                const fullName = employee?.full_name ?? "—";
-                return (
-                  <li key={l.id} style={{ marginBottom: 6 }}>
-                    <div
-                      title={fullName}
-                      style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-                    >
-                      {fullName}
-                    </div>
-                    <span style={{ color: l.status === "approved" ? "#2e7d32" : "#a06a00" }}>
-                      {statusLabel[l.status] ?? l.status}
-                    </span>
-                    {canApprove && l.status === "pending_approval" && (
-                      <div style={{ marginTop: 2 }}>
-                        <button onClick={() => handleApproveSubmission(l)}>Согласовать</button>{" "}
-                        <button onClick={() => handleRejectSubmission(l)}>Отклонить</button>
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-              {clickedDayLeaves.length === 0 && <li>Никто не в отпуске</li>}
-            </ul>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+            <strong>{format(parseISO(clickedDay), "dd.MM.yyyy")}</strong>
+            <button
+              type="button"
+              onClick={() => setClickedDay(null)}
+              title="Закрыть"
+              style={{
+                border: "none",
+                background: "none",
+                cursor: "pointer",
+                fontSize: 20,
+                lineHeight: 1,
+                padding: 0,
+                color: "#888",
+              }}
+            >
+              ×
+            </button>
           </div>
+          <ul style={{ margin: "8px 0 0 0", paddingLeft: 20 }}>
+            {clickedDayLeaves.map((l) => {
+              const employee = employeesById.get(l.user_id);
+              const fullName = employee?.full_name ?? "—";
+              return (
+                <li key={l.id} style={{ marginBottom: 6 }}>
+                  <div
+                    title={fullName}
+                    style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                  >
+                    {fullName}
+                  </div>
+                  <span style={{ color: l.status === "approved" ? "#2e7d32" : "#a06a00" }}>
+                    {statusLabel[l.status] ?? l.status}
+                  </span>
+                  {canApprove && l.status === "pending_approval" && (
+                    <div style={{ marginTop: 2 }}>
+                      <button onClick={() => handleApproveSubmission(l)}>Согласовать</button>{" "}
+                      <button onClick={() => handleRejectSubmission(l)}>Отклонить</button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+            {clickedDayLeaves.length === 0 && <li>Никто не в отпуске</li>}
+          </ul>
         </div>
       )}
       </div>
