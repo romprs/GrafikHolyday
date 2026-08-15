@@ -3,6 +3,7 @@ import { ru } from "date-fns/locale/ru";
 import { DayPicker, type DateRange, type Matcher } from "react-day-picker";
 import "react-day-picker/style.css";
 import "./DateRangePicker.css";
+import { isNonWorkingDay } from "../holidays";
 import type { BlockedRangeOut } from "../api/types";
 
 interface Props {
@@ -85,27 +86,24 @@ export function DateRangePicker({
           onDayMouseEnter={(day) => onHoverDayChange?.(day)}
           onDayMouseLeave={() => onHoverDayChange?.(undefined)}
           modifiers={{
+            nonWorking: isNonWorkingDay,
             blocked: toDateRangeMatchers(blockedRanges),
             planned: toDateRangeMatchers(planned),
             preview: previewRange,
           }}
           modifiersStyles={{
-            blocked: { textDecoration: "line-through", color: "#b00" },
+            nonWorking: { backgroundColor: "#ffe3e3" },
+            blocked: { backgroundColor: "#e0e0e0", color: "#777" },
             planned: { backgroundColor: "#cfe8ff", color: "#0a4a8f", fontWeight: 600 },
             preview: { backgroundColor: "#e8eef7", color: "#333", boxShadow: "inset 0 0 0 1px #99b" },
           }}
         />
       </div>
-      {(blockedRanges.length > 0 || planned.length > 0) && (
-        <p style={{ fontSize: "0.85em", color: "#888" }}>
-          {blockedRanges.length > 0 && (
-            <>
-              Зачёркнуты недоступные для отпуска дни (наведите — см. список ниже).{" "}
-            </>
-          )}
-          {planned.length > 0 && <>Подсвечены дни, уже добавленные в план отпуска.</>}
-        </p>
-      )}
+      <p style={{ fontSize: "0.85em", color: "#888" }}>
+        Светло-красным — выходные и праздничные дни. Серым фоном — недоступные для отпуска дни
+        {blockedRanges.length > 0 && " (наведите — см. список ниже)"}.
+        {planned.length > 0 && <> Голубым — дни, уже добавленные в план отпуска.</>}
+      </p>
     </div>
   );
 }

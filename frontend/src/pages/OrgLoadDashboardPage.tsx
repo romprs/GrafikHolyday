@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { ru } from "date-fns/locale/ru";
 import { useMemo, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { apiFetch } from "../api/client";
 import { getRestrictionSettings } from "../api/calendar";
+import { isNonWorkingDay } from "../holidays";
 import { approveLeaveRequest, rejectLeaveRequest } from "../api/leaveRequests";
 import { getOrgLoadDetail } from "../api/orgLoad";
 import type {
@@ -285,6 +286,7 @@ export function OrgLoadDashboardPage() {
                       ? onLeave.length / inScopeEmployees.length
                       : 0;
                     const empty = onLeave.length === 0;
+                    const nonWorking = isNonWorkingDay(new Date(year, monthIndex, day));
                     return (
                       <td key={day} style={{ padding: 2 }}>
                         <button
@@ -302,7 +304,9 @@ export function OrgLoadDashboardPage() {
                             borderRadius: 4,
                             cursor: empty ? "default" : "pointer",
                             background: empty
-                              ? "#f0f0f0"
+                              ? nonWorking
+                                ? "#ffe3e3"
+                                : "#f0f0f0"
                               : bandColor[band(fraction, yellowThreshold, redThreshold)],
                             color: empty ? "#bbb" : "white",
                             fontSize: 13,
@@ -348,24 +352,58 @@ export function OrgLoadDashboardPage() {
           />
           нет отпусков (клик недоступен)
         </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span
+            style={{
+              display: "inline-block",
+              width: 12,
+              height: 12,
+              background: "#ffe3e3",
+              borderRadius: 2,
+            }}
+          />
+          выходной/праздник
+        </span>
       </div>
       </div>
 
       {clickedDay && (
         <div
           style={{
-            flex: "0 0 280px",
+            position: "fixed",
+            top: 96,
+            right: 24,
+            width: 280,
             border: "1px solid #ccc",
             borderRadius: 6,
             padding: 12,
             maxHeight: "70vh",
             overflowY: "auto",
-            position: "sticky",
-            top: 16,
+            background: "#fff",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
+            zIndex: 100,
           }}
         >
-          <strong>{clickedDay}</strong>
-          <ul style={{ margin: "4px 0 0 0", paddingLeft: 20 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+            <strong>{format(parseISO(clickedDay), "dd.MM.yyyy")}</strong>
+            <button
+              type="button"
+              onClick={() => setClickedDay(null)}
+              title="Закрыть"
+              style={{
+                border: "none",
+                background: "none",
+                cursor: "pointer",
+                fontSize: 20,
+                lineHeight: 1,
+                padding: 0,
+                color: "#888",
+              }}
+            >
+              ×
+            </button>
+          </div>
+          <ul style={{ margin: "8px 0 0 0", paddingLeft: 20 }}>
             {clickedDayLeaves.map((l) => {
               const employee = employeesById.get(l.user_id);
               const fullName = employee?.full_name ?? "—";
@@ -391,7 +429,6 @@ export function OrgLoadDashboardPage() {
             })}
             {clickedDayLeaves.length === 0 && <li>Никто не в отпуске</li>}
           </ul>
-          <button onClick={() => setClickedDay(null)}>Закрыть</button>
         </div>
       )}
       </div>

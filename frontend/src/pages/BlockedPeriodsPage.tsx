@@ -1,9 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { apiFetch, ApiError } from "../api/client";
 import {
   createBlockedPeriod,
   deleteBlockedPeriod,
+  getRestrictionSettings,
   listBlockedPeriods,
 } from "../api/calendar";
 import type { BlockedPeriodScope, OrgUnitEmployeeOut, OrgUnitOut } from "../api/types";
@@ -22,8 +23,38 @@ export function BlockedPeriodsPage() {
     queryKey: ["org-unit-employees"],
     queryFn: () => apiFetch<OrgUnitEmployeeOut[]>("/org-units/employees"),
   });
+  const { data: restrictionSettings } = useQuery({
+    queryKey: ["restriction-settings"],
+    queryFn: getRestrictionSettings,
+  });
   const employeeName = (id: string) =>
     employees?.find((e) => e.id === id)?.full_name ?? id;
+
+  const planningYearSetting = restrictionSettings?.find((s) => s.key === "planning_year");
+  const planningYear =
+    typeof planningYearSetting?.params.year === "number"
+      ? planningYearSetting.params.year
+      : new Date().getFullYear();
+
+  // Список годов для фильтра — плановый год плюс все года, которые реально
+  // встречаются в данных (периоды блокировок могут выходить за его пределы).
+  const availableYears = useMemo(() => {
+    const years = new Set<number>([planningYear]);
+    for (const b of blockedPeriods ?? []) {
+      years.add(new Date(b.date_from).getFullYear());
+      years.add(new Date(b.date_to).getFullYear());
+    }
+    return Array.from(years).sort((a, b) => b - a);
+  }, [blockedPeriods, planningYear]);
+
+  const [yearFilter, setYearFilter] = useState<number | "">(planningYear);
+
+  const filteredBlockedPeriods = useMemo(() => {
+    if (yearFilter === "") return blockedPeriods ?? [];
+    const yearStart = `${yearFilter}-01-01`;
+    const yearEnd = `${yearFilter}-12-31`;
+    return (blockedPeriods ?? []).filter((b) => b.date_from <= yearEnd && b.date_to >= yearStart);
+  }, [blockedPeriods, yearFilter]);
 
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -152,7 +183,22 @@ export function BlockedPeriodsPage() {
         {error && <p style={{ color: "crimson" }}>{error}</p>}
       </form>
 
-      <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 16 }}>
+      <label style={{ display: "block", marginTop: 16 }}>
+        Плановый год:{" "}
+        <select
+          value={yearFilter}
+          onChange={(e) => setYearFilter(e.target.value === "" ? "" : Number(e.target.value))}
+        >
+          <option value="">Все года</option>
+          {availableYears.map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 8 }}>
         <thead>
           <tr>
             <th style={{ textAlign: "left" }}>Период</th>
@@ -162,7 +208,7 @@ export function BlockedPeriodsPage() {
           </tr>
         </thead>
         <tbody>
-          {blockedPeriods?.map((b) => (
+          {filteredBlockedPeriods.map((b) => (
             <tr key={b.id}>
               <td>
                 {b.date_from} — {b.date_to}
