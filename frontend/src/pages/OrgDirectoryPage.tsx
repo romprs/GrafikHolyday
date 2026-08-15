@@ -886,8 +886,10 @@ export function OrgDirectoryPage() {
     });
   }
 
+  const UNASSIGNED_ID = "__unassigned__";
+
   function expandAll() {
-    setExpanded(new Set((orgUnits ?? []).map((u) => u.id)));
+    setExpanded(new Set([...(orgUnits ?? []).map((u) => u.id), UNASSIGNED_ID]));
   }
 
   function collapseAll() {
@@ -896,6 +898,7 @@ export function OrgDirectoryPage() {
 
   const unassignedVisible = unassigned.filter((e) => !visibleEmployeeIds || visibleEmployeeIds.has(e.id));
   const showUnassigned = unassignedVisible.length > 0 && (!unitFilter || !filtersActive);
+  const unassignedOpen = filtersActive ? unassignedVisible.length > 0 : expanded.has(UNASSIGNED_ID);
   const cols = isHrAdmin ? ADMIN_COLS : READONLY_COLS;
 
   return (
@@ -1053,25 +1056,34 @@ export function OrgDirectoryPage() {
               <>
                 <tr style={{ background: "#f2f5fa" }}>
                   <td style={{ ...td, fontWeight: 600 }} colSpan={cols}>
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(UNASSIGNED_ID)}
+                      style={{ border: "none", background: "none", cursor: "pointer", width: 16, fontWeight: 700, padding: 0 }}
+                      title={unassignedOpen ? "Свернуть" : "Развернуть"}
+                    >
+                      {unassignedOpen ? "▾" : "▸"}
+                    </button>{" "}
                     Без подразделения <span style={{ fontWeight: 400, color: "#aaa" }}>[{unassignedVisible.length}]</span>
                   </td>
                 </tr>
-                {unassignedVisible.map((e) =>
-                  isHrAdmin ? (
-                    <EmployeeRowAdmin
-                      key={e.id}
-                      employee={e}
-                      orgUnits={orgUnits ?? []}
-                      currentUserId={currentUser?.id}
-                      year={year}
-                      editing={editingEmployeeId === e.id}
-                      setEditing={setEditingEmployeeId}
-                      onSaved={refresh}
-                    />
-                  ) : (
-                    <EmployeeRowReadOnly key={e.id} employee={e} />
-                  ),
-                )}
+                {unassignedOpen &&
+                  unassignedVisible.map((e) =>
+                    isHrAdmin ? (
+                      <EmployeeRowAdmin
+                        key={e.id}
+                        employee={e}
+                        orgUnits={orgUnits ?? []}
+                        currentUserId={currentUser?.id}
+                        year={year}
+                        editing={editingEmployeeId === e.id}
+                        setEditing={setEditingEmployeeId}
+                        onSaved={refresh}
+                      />
+                    ) : (
+                      <EmployeeRowReadOnly key={e.id} employee={e} />
+                    ),
+                  )}
               </>
             )}
           </tbody>
