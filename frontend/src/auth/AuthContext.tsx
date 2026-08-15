@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { apiFetch, getDevUserId, setDevUserId } from "../api/client";
 import type { CurrentUserOut, UserOut } from "../api/types";
@@ -13,6 +14,7 @@ interface AuthState {
 const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [currentUser, setCurrentUser] = useState<CurrentUserOut | null>(null);
   const [devUsers, setDevUsers] = useState<UserOut[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,14 +43,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Смена пользователя (dev-логин) не должна оставлять в кэше React Query
+  // данные предыдущего — иначе на миг просачиваются чужие/недоступные
+  // данные (или запросы к ним падают 403, пока кэш не обновится сам).
   const loginAs = async (userId: string) => {
     setDevUserId(userId);
+    queryClient.clear();
     await refreshMe();
   };
 
   const logout = () => {
     setDevUserId(null);
     setCurrentUser(null);
+    queryClient.clear();
   };
 
   return (

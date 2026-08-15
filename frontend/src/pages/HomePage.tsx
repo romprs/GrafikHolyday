@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { getRestrictionSettings } from "../api/calendar";
+import { listMyDelegationTargets } from "../api/delegations";
 import { listMyLeaveRequests } from "../api/leaveRequests";
 import { AllRequestsPage } from "./AllRequestsPage";
 import { ApprovalQueuePage } from "./ApprovalQueuePage";
@@ -45,6 +46,14 @@ export function HomePage() {
     queryFn: () => listMyLeaveRequests(),
     enabled: !!currentUser,
   });
+  // Делегат может подавать заявки за подопечных даже когда у него самого
+  // уже есть активная заявка — вкладку нельзя прятать только по своему
+  // статусу, если есть за кого ещё подать (см. onBehalfOf в RequestFormPage).
+  const { data: delegationTargets } = useQuery({
+    queryKey: ["delegation-targets"],
+    queryFn: listMyDelegationTargets,
+    enabled: !!currentUser,
+  });
 
   const planningYearSetting = restrictionSettings?.find((s) => s.key === "planning_year");
   const planningYear =
@@ -53,20 +62,20 @@ export function HomePage() {
       : new Date().getFullYear();
 
   // Пока есть поданная или согласованная заявка на плановый год — новую
-  // начинать нельзя (см. leave_request_service._check_no_active_submission),
-  // поэтому вкладку скрываем совсем, а не просто блокируем форму внутри.
+  // за себя начинать нельзя (см. leave_request_service._check_no_active_submission).
   const hasActiveSubmissionThisYear = (myRequests ?? []).some(
     (r) =>
       (r.status === "pending_approval" || r.status === "approved") &&
       new Date(r.date_from).getFullYear() <= planningYear &&
       new Date(r.date_to).getFullYear() >= planningYear,
   );
+  const canSubmitNewRequest = !hasActiveSubmissionThisYear || (delegationTargets?.length ?? 0) > 0;
 
   useEffect(() => {
-    if (tab === "new-request" && hasActiveSubmissionThisYear) {
+    if (tab === "new-request" && !canSubmitNewRequest) {
       setTab("my-requests");
     }
-  }, [tab, hasActiveSubmissionThisYear]);
+  }, [tab, canSubmitNewRequest]);
 
   // HR-админ по умолчанию попал бы на скрытую для него вкладку "Мои
   // заявки" — переключаем на первую доступную, как только известна роль.
@@ -87,7 +96,7 @@ export function HomePage() {
   // сотруднические вкладки ему не показываем.
   const tabs: { id: Tab; label: string; visible: boolean }[] = [
     { id: "my-requests", label: "Мои заявки", visible: !isHrAdmin },
-    { id: "new-request", label: "Новая заявка", visible: !isHrAdmin && !hasActiveSubmissionThisYear },
+    { id: "new-request", label: "Новая заявка", visible: !isHrAdmin && canSubmitNewRequest },
     { id: "approvals", label: "Согласование", visible: isManager },
     { id: "blocked-periods", label: "Недоступные периоды", visible: isManagerOrHr },
     { id: "org-directory", label: "Оргструктура и сотрудники", visible: isManagerOrHr },

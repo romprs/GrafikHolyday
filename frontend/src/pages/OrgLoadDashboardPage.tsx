@@ -77,8 +77,12 @@ export function OrgLoadDashboardPage() {
     queryKey: ["restriction-settings"],
     queryFn: getRestrictionSettings,
   });
+  // Деактивированные подразделения не выбираются на этом графике — как и
+  // на дашборде загруженности, тут нет смысла смотреть отпуска расформированного отдела.
+  const activeOrgUnits = useMemo(() => (orgUnits ?? []).filter((u) => u.is_active), [orgUnits]);
+
   const [selectedUnitId, setSelectedUnitId] = useState<string>("");
-  const unitId = selectedUnitId || orgUnits?.[0]?.id || "";
+  const unitId = selectedUnitId || activeOrgUnits[0]?.id || "";
 
   const { data: detail } = useQuery({
     queryKey: ["org-load-detail", unitId],
@@ -172,7 +176,7 @@ export function OrgLoadDashboardPage() {
         <label>
           Подразделение:{" "}
           <select value={unitId} onChange={(e) => setSelectedUnitId(e.target.value)}>
-            {orgUnits?.map((u) => (
+            {activeOrgUnits.map((u) => (
               <option key={u.id} value={u.id}>
                 {u.name} ({u.unit_kind})
               </option>
