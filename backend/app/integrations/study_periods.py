@@ -9,10 +9,13 @@
 (по одному сотруднику за раз, режим "http") — структура записи одинаковая.
 """
 
+import logging
 from datetime import date, datetime
 
 import httpx
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 class StudyPeriodEntryDTO(BaseModel):
@@ -63,13 +66,61 @@ class StudyPeriodsClient:
             "Period2": f"{period_to:%d.%m.%Y} 23:59:59",
             "Employee": employee_code,
         }
-        response = httpx.get(
+        logger.info(
+            "Запрос к источнику недоступных периодов (1С): GET %s, табельный номер=%s, период=%s..%s",
             self._base_url,
-            params=params,
-            auth=self._auth,
-            verify=self._verify_tls,
-            timeout=self._timeout,
+            employee_code,
+            period_from,
+            period_to,
         )
-        response.raise_for_status()
-        data = response.json()
+        try:
+            response = httpx.get(
+                self._base_url,
+                params=params,
+                auth=self._auth,
+                verify=self._verify_tls,
+                timeout=self._timeout,
+            )
+        except httpx.RequestError as exc:
+            logger.error(
+                "Не удалось соединиться с источником недоступных периодов (%s, табельный номер=%s): %s",
+                self._base_url,
+                employee_code,
+                exc,
+            )
+            raise RuntimeError(f"Не удалось соединиться с {self._base_url}: {exc}") from exc
+
+        logger.info(
+            "Ответ от источника недоступных периодов (табельный номер=%s): HTTP %s, %d байт",
+            employee_code,
+            response.status_code,
+            len(response.content),
+        )
+        if response.is_error:
+            body_preview = response.text[:500]
+            logger.error(
+                "Источник недоступных периодов вернул ошибку: GET %s (табельный номер=%s) -> HTTP %s. Тело ответа: %s",
+                self._base_url,
+                employee_code,
+                response.status_code,
+                body_preview,
+            )
+            raise RuntimeError(
+                f"Источник ответил HTTP {response.status_code} на запрос по табельному номеру {employee_code}"
+                + (f": {body_preview}" if body_preview else "")
+            )
+
+        try:
+            data = response.json()
+        except ValueError as exc:
+            body_preview = response.text[:500]
+            logger.error(
+                "Не удалось разобрать ответ источника недоступных периодов (табельный номер=%s) как JSON: %s. Тело ответа (начало): %s",
+                employee_code,
+                exc,
+                body_preview,
+            )
+            raise RuntimeError(
+                f"Ответ источника (табельный номер={employee_code}) не является корректным JSON: {exc}"
+            ) from exc
         return data if isinstance(data, list) else [data]
