@@ -34,5 +34,13 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:5173"]
 
+    # Аварийный вход для hr_admin, независимый от auth_provider — если
+    # Kerberos/SPNEGO вдруг перестанет пускать всех (сломанный keytab,
+    # проблема с AD и т.п.), у HR-администратора всё равно должен остаться
+    # способ зайти. Не влияет на обычных пользователей: пароль сюда не
+    # попадает и учётная запись обязана иметь роль hr_admin на момент входа
+    # (см. app/auth/admin_fallback.py, app/dependencies.py). Пусто = выключено.
+    admin_fallback_password: str | None = None
+
 
 settings = Settings()

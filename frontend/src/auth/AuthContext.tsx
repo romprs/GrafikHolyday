@@ -1,6 +1,12 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { apiFetch, getDevUserId, setDevUserId } from "../api/client";
+import {
+  apiFetch,
+  getAdminFallbackCreds,
+  getDevUserId,
+  setAdminFallbackCreds,
+  setDevUserId,
+} from "../api/client";
 import type { CurrentUserOut, UserOut } from "../api/types";
 
 interface AuthState {
@@ -8,6 +14,7 @@ interface AuthState {
   devUsers: UserOut[];
   loading: boolean;
   loginAs: (userId: string) => Promise<void>;
+  loginAsFallback: (email: string, password: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -20,7 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refreshMe = async () => {
-    if (!getDevUserId()) {
+    if (!getDevUserId() && !getAdminFallbackCreds()) {
       setCurrentUser(null);
       return;
     }
@@ -29,14 +36,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setCurrentUser(me);
     } catch {
       setDevUserId(null);
+      setAdminFallbackCreds(null);
       setCurrentUser(null);
     }
   };
 
   useEffect(() => {
     (async () => {
-      const users = await apiFetch<UserOut[]>("/auth/dev/users");
-      setDevUsers(users);
+      try {
+        const users = await apiFetch<UserOut[]>("/auth/dev/users");
+        setDevUsers(users);
+      } catch {
+        // Недоступно вне dev-режима (auth_provider=kerberos) — ожидаемо,
+        // не должно блокировать остальную инициализацию (см. ниже).
+      }
       await refreshMe();
       setLoading(false);
     })();
@@ -52,14 +65,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await refreshMe();
   };
 
+  // Аварийный вход hr_admin — работает независимо от auth_provider (см.
+  // backend app/auth/admin_fallback.py). В отличие от refreshMe() ошибку не
+  // проглатываем, а пробрасываем — форме входа нужно показать "неверный
+  // пароль", а не молча остаться на экране логина.
+  const loginAsFallback = async (email: string, password: string) => {
+    setAdminFallbackCreds({ email, password });
+    try {
+      const me = await apiFetch<CurrentUserOut>("/users/me");
+      queryClient.clear();
+      setCurrentUser(me);
+    } catch (err) {
+      setAdminFallbackCreds(null);
+      throw err;
+    }
+  };
+
   const logout = () => {
     setDevUserId(null);
+    setAdminFallbackCreds(null);
     setCurrentUser(null);
     queryClient.clear();
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, devUsers, loading, loginAs, logout }}>
+    <AuthContext.Provider
+      value={{ currentUser, devUsers, loading, loginAs, loginAsFallback, logout }}
+    >
       {children}
     </AuthContext.Provider>
   );
