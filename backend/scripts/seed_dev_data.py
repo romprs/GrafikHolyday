@@ -164,6 +164,8 @@ def seed() -> None:
                     "auth_login": "",
                     "auth_password": "",
                     "verify_tls": False,
+                    "cert_path": "",
+                    "cert_password": "",
                 },
                 "Источник учебных планов (недоступные периоды сотрудников)",
             ),
