@@ -42,19 +42,12 @@ def trigger_study_periods_sync(db: DbSession, user: HrAdmin) -> SyncRunOut:
     if not base_url:
         raise ValidationFailedError("Не задан URL источника учебных планов")
 
-    try:
-        client = StudyPeriodsClient(
-            base_url=base_url,
-            login=params.get("auth_login") or "",
-            password=params.get("auth_password") or "",
-            verify_tls=bool(params.get("verify_tls", False)),
-            cert_path=params.get("cert_path") or None,
-            cert_password=params.get("cert_password") or None,
-        )
-    except (OSError, RuntimeError) as exc:
-        # Битый/отсутствующий путь к сертификату — частая ошибка при первой
-        # настройке, показываем её сразу в UI, а не 500-й без деталей.
-        raise ValidationFailedError(f"Не удалось подготовить клиент источника: {exc}") from exc
+    client = StudyPeriodsClient(
+        base_url=base_url,
+        login=params.get("auth_login") or "",
+        password=params.get("auth_password") or "",
+        verify_tls=bool(params.get("verify_tls", False)),
+    )
     year = restriction_settings_service.get_planning_year(db)
     return study_period_sync_service.run_http_sync(
         db, client, date(year, 1, 1), date(year, 12, 31), "manual", user.id

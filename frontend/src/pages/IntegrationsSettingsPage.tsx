@@ -90,8 +90,6 @@ function StudyPeriodsSourceForm({
   const [authLogin, setAuthLogin] = useState((setting.params.auth_login as string) ?? "");
   const [authPassword, setAuthPassword] = useState((setting.params.auth_password as string) ?? "");
   const [verifyTls, setVerifyTls] = useState(Boolean(setting.params.verify_tls));
-  const [certPath, setCertPath] = useState((setting.params.cert_path as string) ?? "");
-  const [certPassword, setCertPassword] = useState((setting.params.cert_password as string) ?? "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
@@ -104,8 +102,6 @@ function StudyPeriodsSourceForm({
     setAuthLogin((setting.params.auth_login as string) ?? "");
     setAuthPassword((setting.params.auth_password as string) ?? "");
     setVerifyTls(Boolean(setting.params.verify_tls));
-    setCertPath((setting.params.cert_path as string) ?? "");
-    setCertPassword((setting.params.cert_password as string) ?? "");
   }, [setting]);
 
   const { data: runs } = useQuery({
@@ -125,8 +121,6 @@ function StudyPeriodsSourceForm({
           auth_login: authLogin,
           auth_password: authPassword,
           verify_tls: verifyTls,
-          cert_path: certPath,
-          cert_password: certPassword,
         },
       });
       queryClient.invalidateQueries({ queryKey: ["restriction-settings"] });
@@ -176,9 +170,8 @@ function StudyPeriodsSourceForm({
       <p style={{ fontSize: "0.85em", color: "#888" }}>
         Недоступные периоды сотрудников (обучение и т.п.) сопоставляются по табельному номеру
         (задаётся на странице «Сотрудники»). Два режима: загрузка JSON-файла вручную — доступно уже
-        сейчас — или синхронизация напрямую из источника по HTTP. Авторизация — логин/пароль (Basic)
-        и/или клиентский сертификат (.pfx): если путь к сертификату указан, он используется для TLS
-        поверх (или вместо) Basic — можно задать оба варианта сразу.
+        сейчас — или синхронизация напрямую из источника по HTTP, когда будет согласован боевой
+        эндпойнт.
       </p>
       <label style={{ display: "block", marginBottom: 8 }}>
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />{" "}
@@ -229,25 +222,6 @@ function StudyPeriodsSourceForm({
               onChange={(e) => setVerifyTls(e.target.checked)}
             />{" "}
             Проверять TLS-сертификат
-          </label>
-          <label style={{ display: "block", marginBottom: 8 }}>
-            Путь к файлу клиентского сертификата (.pfx), на сервере бэкенда
-            <input
-              type="text"
-              value={certPath}
-              onChange={(e) => setCertPath(e.target.value)}
-              placeholder="/opt/vacation-planner/certs/1c-client.pfx"
-              style={{ display: "block", width: "100%" }}
-            />
-          </label>
-          <label style={{ display: "block", marginBottom: 8 }}>
-            Пароль к сертификату (если задан)
-            <input
-              type="password"
-              value={certPassword}
-              onChange={(e) => setCertPassword(e.target.value)}
-              style={{ display: "block", width: "100%" }}
-            />
           </label>
         </>
       )}
