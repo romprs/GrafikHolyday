@@ -64,6 +64,7 @@ tar -C "$ROOT_DIR/backend" -cf - \
 echo "==> [5/5] Кладу конфиги установки и упаковываю бандл"
 cp "$ROOT_DIR/deploy/redos8/install.sh" "$BUNDLE_DIR/"
 cp "$ROOT_DIR/deploy/redos8/nginx-vacation.conf" "$BUNDLE_DIR/"
+cp "$ROOT_DIR/deploy/redos8/nginx-vacation-tls.conf" "$BUNDLE_DIR/"
 cp "$ROOT_DIR/deploy/redos8/vacation-backend.service" "$BUNDLE_DIR/"
 cp "$ROOT_DIR/deploy/redos8/.env.example" "$BUNDLE_DIR/"
 cp "$ROOT_DIR/deploy/redos8/README.md" "$BUNDLE_DIR/"

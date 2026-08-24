@@ -104,6 +104,7 @@ try {
     Write-Host "==> [5/5] Adding install configs and packing the bundle"
     Copy-Item (Join-Path $PSScriptRoot "install.sh") $BundleDir
     Copy-Item (Join-Path $PSScriptRoot "nginx-vacation.conf") $BundleDir
+    Copy-Item (Join-Path $PSScriptRoot "nginx-vacation-tls.conf") $BundleDir
     Copy-Item (Join-Path $PSScriptRoot "vacation-backend.service") $BundleDir
     Copy-Item (Join-Path $PSScriptRoot ".env.example") $BundleDir
     Copy-Item (Join-Path $PSScriptRoot "README.md") $BundleDir
