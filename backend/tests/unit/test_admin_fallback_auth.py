@@ -5,6 +5,7 @@ from app.core.exceptions import ForbiddenError
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.models.user_role import UserRole
+from app.routers.admin_fallback import check_admin_fallback
 
 
 @pytest.fixture()
@@ -97,3 +98,30 @@ def test_fallback_does_not_leak_into_normal_dev_login(db_session, hr_admin_user)
     а не тихо проваливаться в аварийный вход."""
     with pytest.raises(ForbiddenError):
         get_current_user(request=None, db=db_session)
+
+
+# --- /auth/admin-fallback/check — "пропускной" эндпоинт для nginx
+# auth_request при KERBEROS_MODE=nginx (см. nginx-gssapi.conf.example) ---
+
+
+def test_fallback_check_endpoint_ok_for_hr_admin(db_session, hr_admin_user):
+    result = check_admin_fallback(
+        db=db_session,
+        x_admin_fallback_email="hr@fallback.local",
+        x_admin_fallback_password="correct-horse-battery-staple",
+    )
+    assert result == {"ok": True}
+
+
+def test_fallback_check_endpoint_rejects_non_hr_admin(db_session, employee_user):
+    with pytest.raises(ForbiddenError):
+        check_admin_fallback(
+            db=db_session,
+            x_admin_fallback_email="employee@fallback.local",
+            x_admin_fallback_password="correct-horse-battery-staple",
+        )
+
+
+def test_fallback_check_endpoint_rejects_missing_headers(db_session, hr_admin_user):
+    with pytest.raises(ForbiddenError):
+        check_admin_fallback(db=db_session)

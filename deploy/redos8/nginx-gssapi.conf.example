@@ -5,9 +5,9 @@
 # ВНИМАНИЕ: это НЕ готовый к установке файл (в отличие от
 # nginx-vacation.conf), а образец — под конкретный сервер нужно проверить
 # и, скорее всего, поправить пути/имена модуля, см. пункты ниже. Возьмите
-# из этого файла только location /api/ и добавьте недостающие директивы в
-# уже установленный /etc/nginx/conf.d/vacation-planner.conf (вместо его
-# исходного location /api/).
+# из этого файла location /api/ + internal-location аварийного входа и
+# добавьте в уже установленный /etc/nginx/conf.d/vacation-planner.conf
+# (вместо исходного location /api/).
 #
 # 1. Нужен модуль nginx с директивами auth_gssapi_* — GSSAPI-версия nginx
 #    из коробки (nginx.org) её не содержит, это отдельный динамический
@@ -21,7 +21,20 @@
 #
 # 2. Keytab-файл нужен nginx (не бэкенду) — положить туда, где его сможет
 #    прочитать процесс nginx (обычно пользователь nginx/www-data), права
-#    0600, владелец — пользователь, от которого работает nginx.
+#    0600, владелец — пользователь, от которого работает nginx. Ниже —
+#    путь как пример, назовите/разместите как удобно на вашем сервере.
+#
+# 3. Аварийный вход HR-admin (ADMIN_FALLBACK_PASSWORD, см. .env.example)
+#    реализован в бэкенде и проверяет свои собственные заголовки
+#    (X-Admin-Fallback-Email/-Password) — но location /api/ ниже требует
+#    валидный SPNEGO-тикет БЕЗУСЛОВНО, и без специальной настройки nginx
+#    отклонит запрос ещё до того, как бэкенд увидит эти заголовки.
+#    "satisfy any" + "auth_request" ниже — это то, что открывает
+#    аварийный вход НАРЯДУ с Kerberos (не вместо него): запрос пропускается,
+#    если выполнено ХОТЬ ОДНО из двух условий (валидный тикет ИЛИ
+#    подтверждение от /internal/admin-fallback-check). Сама идентификация
+#    пользователя всё равно происходит в бэкенде на основном запросе —
+#    этот internal-эндпоинт лишь решает nginx'у, пропускать или нет.
 
 # В /etc/nginx/nginx.conf (главный контекст, НЕ внутри server{}) добавить,
 # если модуль ставится как динамический (уточнить точное имя .so файла):
@@ -35,9 +48,15 @@ server {
     index index.html;
 
     location /api/ {
-        auth_gssapi_keytab /etc/vacation-planner/vacation.keytab;
+        satisfy any;
+
+        auth_gssapi_keytab /etc/vacation-planner/vp_web.keytab;
         auth_gssapi_realm CORP.AMURGPZ.RU;
         auth_gssapi_allow_basic_fallback off;
+
+        # Второе условие "satisfy any" — см. пункт 3 выше и
+        # location = /internal/admin-fallback-check ниже.
+        auth_request /internal/admin-fallback-check;
 
         proxy_pass http://127.0.0.1:8000/;
         proxy_set_header Host $host;
@@ -47,7 +66,24 @@ server {
         # $remote_user после успешной GSSAPI-проверки — это принципал
         # вида "login@CORP.AMURGPZ.RU"; бэкенд сам отрезает "@REALM"
         # (см. app/auth/kerberos_provider.py), передавать можно как есть.
+        # При входе через аварийный пароль (не Kerberos) $remote_user будет
+        # пустым — это ожидаемо, бэкенд в этом случае определяет личность
+        # по X-Admin-Fallback-Email/-Password (проксируются как обычные
+        # заголовки запроса, отдельно настраивать не нужно).
         proxy_set_header X-Remote-User $remote_user;
+    }
+
+    # internal — недоступен снаружи напрямую, только через auth_request
+    # выше. proxy_pass_request_body off + Content-Length "" — тут не нужно
+    # тело запроса, только заголовки (auth_request всегда шлёт GET/HEAD
+    # исходного запроса на этот location независимо от метода снаружи).
+    location = /internal/admin-fallback-check {
+        internal;
+        proxy_pass http://127.0.0.1:8000/auth/admin-fallback/check;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_set_header X-Admin-Fallback-Email $http_x_admin_fallback_email;
+        proxy_set_header X-Admin-Fallback-Password $http_x_admin_fallback_password;
     }
 
     location /health {

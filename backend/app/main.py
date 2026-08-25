@@ -16,6 +16,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 from app.routers import (
+    admin_fallback,
     admin_study_periods,
     admin_sync,
     admin_users,
@@ -57,6 +58,7 @@ app.add_middleware(
 
 register_exception_handlers(app)
 
+app.include_router(admin_fallback.router)
 app.include_router(users.router)
 app.include_router(org_units.router)
 app.include_router(auth_dev.router)
