@@ -92,11 +92,18 @@ try {
     }
     Copy-Item -Recurse (Join-Path $RootDir "frontend\dist") (Join-Path $BundleDir "frontend-dist")
 
-    Write-Host "==> [4/5] Copying backend source (excluding .venv/__pycache__/egg-info)"
+    Write-Host "==> [4/5] Copying backend source (excluding .venv/__pycache__/egg-info/.env)"
+    # .env is excluded on purpose: it is the developer's local file (DB,
+    # Kerberos, admin-fallback password for THEIR machine), not part of the
+    # source. If it ends up in the bundle, install.sh on the target server
+    # will silently overwrite the already-configured production .env with it
+    # on a re-run (rsync -a --delete in step [2/7]) - wiping out all auth
+    # configuration without any warning.
     $BackendDest = Join-Path $BundleDir "app\backend"
     New-Item -ItemType Directory -Force -Path $BackendDest | Out-Null
     robocopy (Join-Path $RootDir "backend") $BackendDest /E `
         /XD .venv __pycache__ .pytest_cache *.egg-info `
+        /XF .env `
         /NFL /NDL /NJH /NJS | Out-Null
     # robocopy exit codes 0-7 are success, >=8 means a real error
     if ($LASTEXITCODE -ge 8) { throw "robocopy failed ($LASTEXITCODE)" }

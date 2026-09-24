@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { differenceInCalendarDays, format } from "date-fns";
+import { format } from "date-fns";
+import { countHolidays, countLeaveDays } from "../holidays";
 import { useEffect, useRef, useState } from "react";
 import type { DateRange } from "react-day-picker";
 import { ApiError } from "../api/client";
@@ -82,15 +83,15 @@ export function RequestFormPage() {
   const isStillPicking = !!(range?.from && range?.to && range.from.getTime() === range.to.getTime());
   const isPreview = isStillPicking && !!hoverDay && hoverDay.getTime() !== range!.from!.getTime();
   const previewDays = isPreview
-    ? differenceInCalendarDays(
-        range!.from! < hoverDay! ? hoverDay! : range!.from!,
+    ? countLeaveDays(
         range!.from! < hoverDay! ? range!.from! : hoverDay!,
-      ) + 1
+        range!.from! < hoverDay! ? hoverDay! : range!.from!,
+      )
     : null;
   const currentRangeDays = isPreview
     ? previewDays
     : range?.from && range?.to
-      ? differenceInCalendarDays(range.to, range.from) + 1
+      ? countLeaveDays(range.from, range.to)
       : null;
 
   const plannedTotalDays = (drafts ?? []).reduce((sum, p) => sum + p.days, 0);
@@ -135,7 +136,7 @@ export function RequestFormPage() {
       await updateDraftBonus(id, next);
       queryClient.invalidateQueries({ queryKey: ["drafts"] });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Не удалось изменить доплату");
+      setError(err instanceof ApiError ? err.message : "Не удалось изменить выплату ЕСВ");
     }
   }
 
@@ -146,7 +147,7 @@ export function RequestFormPage() {
     if (!range?.from || !range?.to) return;
     const key = `${range.from.getTime()}-${range.to.getTime()}`;
     if (lastAutoAddedKey.current === key) return;
-    const days = differenceInCalendarDays(range.to, range.from) + 1;
+    const days = countLeaveDays(range.from, range.to);
     if (days < minDays) return;
     lastAutoAddedKey.current = key;
     void handleAddPeriod(range.from, range.to);
@@ -184,38 +185,44 @@ export function RequestFormPage() {
   const tooShort = currentRangeDays !== null && currentRangeDays < minDays;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+    <div>
       <h3>Новая заявка на отпуск</h3>
 
       {delegationTargets && delegationTargets.length > 0 && (
-        <label>
-          Действовать от имени:{" "}
-          <select
-            value={onBehalfOf ?? ""}
-            onChange={(e) => setOnBehalfOf(e.target.value || undefined)}
-          >
-            <option value="">Себя</option>
-            {delegationTargets.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.full_name} ({t.email})
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="fieldrow">
+          <div className="field" style={{ maxWidth: 320 }}>
+            <label>Действовать от имени</label>
+            <select value={onBehalfOf ?? ""} onChange={(e) => setOnBehalfOf(e.target.value || undefined)}>
+              <option value="">Себя</option>
+              {delegationTargets.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.full_name} ({t.email})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
       )}
 
       {balance && (
-        <p>
-          Баланс {balance.year}: начислено {balance.accrued_days}, использовано{" "}
-          {balance.used_days}, остаток <strong>{balance.remaining_days}</strong> дн.
+        <div className="cards">
+          <div className="card">
+            <div className="n">{balance.remaining_days}</div>
+            <div className="l">остаток из {balance.accrued_days}, {balance.year}</div>
+          </div>
           {(drafts?.length ?? 0) > 0 && remainingAfterPlanned !== null && (
             <>
-              {" "}
-              — выбрано в плане {plannedTotalDays} дн., не выбрано ещё{" "}
-              <strong>{remainingAfterPlanned}</strong> дн.
+              <div className="card">
+                <div className="n">{plannedTotalDays}</div>
+                <div className="l">выбрано в плане</div>
+              </div>
+              <div className="card">
+                <div className="n">{remainingAfterPlanned}</div>
+                <div className="l">не выбрано ещё</div>
+              </div>
             </>
           )}
-        </p>
+        </div>
       )}
 
       <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
@@ -231,29 +238,19 @@ export function RequestFormPage() {
           />
         </div>
 
-        <div
-          style={{
-            flex: "0 0 260px",
-            border: "1px solid #ddd",
-            borderRadius: 6,
-            padding: 12,
-            display: "flex",
-            flexDirection: "column",
-            gap: 10,
-            position: "sticky",
-            top: 16,
-          }}
-        >
+        <div className="panel" style={{ flex: "0 0 270px", display: "flex", flexDirection: "column", gap: 10, position: "sticky", top: 16 }}>
           <div>
             {currentRangeDays !== null ? (
-              <p style={{ margin: 0, color: tooShort ? "crimson" : undefined }}>
+              <p style={{ margin: 0 }} className={tooShort ? "error-text" : undefined}>
                 {isPreview ? "Выбирается: " : "Длительность: "}
                 <strong>{currentRangeDays} дн.</strong>
+                {!isPreview && range?.from && range?.to && countHolidays(range.from, range.to) > 0 &&
+                  ` (праздничных ${countHolidays(range.from, range.to)} не считаются)`}
                 {tooShort && ` — минимум ${minDays} дн.`}
                 {isPreview && !tooShort && " (кликните ещё раз, чтобы завершить выбор)"}
               </p>
             ) : (
-              <p style={{ margin: 0, color: "#888" }}>
+              <p className="hint" style={{ margin: 0 }}>
                 Выберите период на календаре: клик — начало, клик — конец. Период добавится в
                 план автоматически.
               </p>
@@ -261,17 +258,17 @@ export function RequestFormPage() {
           </div>
 
           <div>
-            <button type="button" onClick={clearSelection} disabled={!range?.from || adding}>
+            <button type="button" className="btn-ghost" onClick={clearSelection} disabled={!range?.from || adding} style={{ padding: "7px 0" }}>
               Очистить выбор
             </button>
           </div>
 
-          {draftsLoading && <p>Загрузка плана…</p>}
+          {draftsLoading && <p className="hint">Загрузка плана…</p>}
 
           {drafts && drafts.length > 0 && (
             <div>
-              <h4 style={{ marginBottom: 4 }}>План отпуска на {planningYear} год</h4>
-              <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "0.9em" }}>
+              <h4>План отпуска на {planningYear} год</h4>
+              <table className="t">
                 <tbody>
                   {drafts.map((d) => (
                     <tr key={d.id}>
@@ -280,18 +277,18 @@ export function RequestFormPage() {
                           {d.date_from} — {d.date_to} ({d.days} дн.)
                         </div>
                         {bonusProgramEnabled && d.days > bonusMinDays && (
-                          <label style={{ fontSize: "0.85em", color: "#888" }}>
+                          <label className="hint" style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4 }}>
                             <input
                               type="checkbox"
                               checked={d.bonus_requested}
                               onChange={(e) => handleToggleBonus(d.id, e.target.checked)}
-                            />{" "}
-                            🎁 доплата к этому периоду
+                            />
+                            🎁 выплата ЕСВ к этому периоду
                           </label>
                         )}
                       </td>
-                      <td style={{ verticalAlign: "top" }}>
-                        <button type="button" onClick={() => handleRemovePeriod(d.id)}>
+                      <td>
+                        <button type="button" className="btn-ghost" onClick={() => handleRemovePeriod(d.id)}>
                           Убрать
                         </button>
                       </td>
@@ -300,23 +297,19 @@ export function RequestFormPage() {
                 </tbody>
               </table>
               {!readyToSubmit && (
-                <p style={{ color: "#888", fontSize: "0.85em" }}>
+                <p className="hint">
                   Отправить на согласование можно, только когда выбран весь доступный остаток —
                   осталось выбрать ещё {remainingAfterPlanned} дн.
                 </p>
               )}
-              <button
-                type="button"
-                onClick={handleSubmitAll}
-                disabled={submitting || !readyToSubmit}
-              >
+              <button type="button" className="btn-primary" onClick={handleSubmitAll} disabled={submitting || !readyToSubmit}>
                 Отправить план на согласование
               </button>
             </div>
           )}
 
-          {error && <p style={{ color: "crimson" }}>{error}</p>}
-          {success && <p style={{ color: "green" }}>Заявка отправлена на согласование.</p>}
+          {error && <p className="error-text">{error}</p>}
+          {success && <p style={{ color: "var(--ok-fg)" }}>Заявка отправлена на согласование.</p>}
         </div>
       </div>
     </div>

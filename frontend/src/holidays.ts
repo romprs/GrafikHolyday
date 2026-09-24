@@ -16,6 +16,7 @@ const HOLIDAY_MONTH_DAY: [month: number, day: number][] = [
   [4, 9], // День Победы
   [5, 12], // День России
   [10, 4], // День народного единства
+  [11, 31], // 31 декабря — нерабочий (по требованию заказчика; в backend/app/core/holidays.py то же)
 ];
 
 export function isHoliday(date: Date): boolean {
@@ -29,4 +30,18 @@ export function isWeekend(date: Date): boolean {
 
 export function isNonWorkingDay(date: Date): boolean {
   return isWeekend(date) || isHoliday(date);
+}
+
+export function countHolidays(from: Date, to: Date): number {
+  let n = 0;
+  for (const d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
+    if (isHoliday(d)) n += 1;
+  }
+  return n;
+}
+
+// Праздничные дни внутри отпуска не списываются с лимита (конец периода не
+// сдвигается) — тот же расчёт, что в backend/app/core/holidays.py.
+export function countLeaveDays(from: Date, to: Date): number {
+  return Math.round((to.getTime() - from.getTime()) / 86400000) + 1 - countHolidays(from, to);
 }

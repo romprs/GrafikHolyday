@@ -54,6 +54,7 @@ def resolve_login(db: Session, login: str) -> User:
     )
     if user is None:
         raise ForbiddenError(f"Пользователь с логином «{login}» не найден или деактивирован")
+    logger.info("Kerberos: логин «%s» сопоставлен с пользователем %s", login, user.email)
     return user
 
 
@@ -121,7 +122,8 @@ class KerberosGSSAPIAuthProvider:
         scheme, _, token_b64 = authorization_header.partition(" ")
         if scheme.lower() != NEGOTIATE.lower() or not token_b64:
             raise AuthChallengeError(
-                "Ожидается заголовок Authorization: Negotiate <token>",
+                f"Ожидается заголовок Authorization: Negotiate <token>, "
+                f"получена схема {scheme!r} — браузер/клиент прислал не тот тип авторизации",
                 www_authenticate=NEGOTIATE,
             )
         try:
@@ -131,21 +133,27 @@ class KerberosGSSAPIAuthProvider:
 
         gssapi = self._gssapi
         ctx = gssapi.SecurityContext(creds=self._server_creds, usage="accept")
+        # gssapi у некоторых ошибок (например, ключ в keytab не подходит для
+        # расшифровки — устаревший kvno) не бросает исключение сразу из
+        # step(), а откладывает его до обращения к .complete/.initiator_name
+        # (внутренний check_last_err в python-gssapi) — поэтому весь обмен
+        # целиком должен быть под одним try/except, не только step().
         try:
             ctx.step(token)
+            if not ctx.complete:
+                # На практике браузер/curl --negotiate с валидным TGT
+                # укладывается в один обмен. Многораундовая негоциация
+                # потребовала бы вернуть клиенту continuation-токен через
+                # WWW-Authenticate и ждать повторного запроса — в текущей
+                # схеме (простой заголовок -> 200/ошибка на один запрос) это
+                # не поддержано.
+                raise ForbiddenError("Kerberos-рукопожатие не завершилось за один обмен")
+            login = principal_to_login(str(ctx.initiator_name))
         except gssapi.exceptions.GSSError as exc:
             logger.warning("Kerberos: не удалось проверить SPNEGO-тикет: %s", exc)
             raise ForbiddenError("Не удалось проверить Kerberos-тикет") from exc
 
-        if not ctx.complete:
-            # На практике браузер/curl --negotiate с валидным TGT укладывается
-            # в один обмен. Многораундовая негоциация потребовала бы вернуть
-            # клиенту continuation-токен через WWW-Authenticate и ждать
-            # повторного запроса — в текущей схеме (простой заголовок ->
-            # 200/ошибка на один запрос) это не поддержано.
-            raise ForbiddenError("Kerberos-рукопожатие не завершилось за один обмен")
-
-        return principal_to_login(str(ctx.initiator_name))
+        return login
 
 
 _gssapi_provider: KerberosGSSAPIAuthProvider | None = None

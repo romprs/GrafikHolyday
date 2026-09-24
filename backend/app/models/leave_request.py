@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDPKMixin
+from app.core.holidays import count_leave_days
 
 STATUSES = ("draft", "pending_approval", "approved", "rejected", "cancelled")
 _statuses_sql_list = ", ".join(f"'{s}'" for s in STATUSES)
@@ -34,8 +35,8 @@ class LeaveRequest(UUIDPKMixin, TimestampMixin, Base):
     date_to: Mapped[date] = mapped_column(Date, nullable=False)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False, default=PENDING_APPROVAL)
-    # Дополнительная выплата к отпуску — доступна при длительности периода
-    # больше порога из restriction_settings[VACATION_BONUS] (см. validation).
+    # Выплата ЕСВ к отпуску — доступна при длительности периода больше
+    # порога из restriction_settings[VACATION_BONUS] (см. validation).
     bonus_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Общий id для всех периодов, отправленных на согласование одним нажатием
     # submit_drafts — руководитель согласовывает/отклоняет всю пачку разом,
@@ -62,4 +63,4 @@ class LeaveRequest(UUIDPKMixin, TimestampMixin, Base):
 
     @property
     def days(self) -> int:
-        return (self.date_to - self.date_from).days + 1
+        return count_leave_days(self.date_from, self.date_to)

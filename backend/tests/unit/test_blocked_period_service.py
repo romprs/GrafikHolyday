@@ -147,6 +147,31 @@ def test_manager_cannot_block_foreign_org_unit(db_session, hierarchy):
         )
 
 
+def test_upper_manager_can_block_subordinate_department(db_session, hierarchy):
+    """Раньше проверялось только буквальное совпадение head_user_id с
+    org_unit_id — вышестоящий руководитель (глава родительского "Управление")
+    не мог управлять блокировками нижестоящего "Отдел", хотя по общей модели
+    иерархии (approval_service, org_unit_service.visible_unit_ids) он должен
+    видеть и то, что ниже по каскаду."""
+    upper = User(email="upper@test.local", full_name="Upper Manager")
+    db_session.add(upper)
+    db_session.flush()
+    hierarchy["division"].head_user_id = upper.id
+    db_session.flush()
+
+    blocked = blocked_period_service.create(
+        db_session,
+        upper,
+        date(2026, 6, 1),
+        date(2026, 6, 2),
+        "x",
+        ORG_UNIT,
+        hierarchy["department"].id,
+        None,
+    )
+    assert blocked.is_active is True
+
+
 def test_manager_can_block_own_department(db_session, hierarchy):
     blocked = blocked_period_service.create(
         db_session,

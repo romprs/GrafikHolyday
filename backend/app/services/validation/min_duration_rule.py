@@ -6,6 +6,7 @@ from app.models.restriction_settings import MIN_LEAVE_DURATION
 from app.models.restriction_settings import RestrictionSettings
 from app.models.user import User
 from app.services.validation.types import Violation
+from app.core.holidays import count_leave_days
 
 KEY = MIN_LEAVE_DURATION
 EXEMPTABLE = True
@@ -19,7 +20,7 @@ def check(
     date_to: date,
 ) -> Violation | None:
     min_days = settings_row.params.get("min_days", 1)
-    requested_days = (date_to - date_from).days + 1
+    requested_days = count_leave_days(date_from, date_to)
     if requested_days < min_days:
         return Violation(
             code="MIN_DURATION_VIOLATION",

@@ -1,3 +1,4 @@
+import calendar
 import uuid
 from datetime import date, datetime, timezone
 
@@ -13,10 +14,15 @@ from app.models.leave_request import (
     LeaveRequest,
 )
 from app.models.leave_type import LeaveType
-from app.models.restriction_settings import VACATION_BONUS
+from app.models.restriction_settings import (
+    VACATION_BONUS,
+    VACATION_BONUS_NEW_HIRE,
+    VACATION_BONUS_VETERAN,
+)
 from app.models.user import User
 from app.services import delegation_service, leave_balance_service, restriction_settings_service
 from app.services.validation import engine as validation_engine
+from app.core.holidays import count_leave_days
 
 
 def _get_vacation_leave_type(db: Session) -> LeaveType:
@@ -37,6 +43,106 @@ def _get_actable(db: Session, actor: User, request_id: uuid.UUID) -> LeaveReques
     return request
 
 
+def _add_months(d: date, months: int) -> date:
+    """d + N календарных месяцев, с усечением дня до последнего дня месяца,
+    если исходного числа в целевом месяце не существует (31.01 + 1мес = 28/29.02)."""
+    total = d.month - 1 + months
+    year = d.year + total // 12
+    month = total % 12 + 1
+    day = min(d.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def _date_in_year(year: int, month: int, day: int) -> date:
+    """date(year, month, day) с усечением дня до последнего дня месяца
+    (29.02 в невисокосный год и т.п.)."""
+    return date(year, month, min(day, calendar.monthrange(year, month)[1]))
+
+
+def _veteran_cutoff(hire_date: date, planning_year: int, shift_months: int) -> date | None:
+    """Для сотрудников со стажем ГОД И БОЛЕЕ — ежегодно повторяющееся (не
+    одноразовое, в отличие от правила для новичков) ограничение: месяц
+    приёма минус shift_months месяцев даёт месяц планового года, начиная с
+    которого доступна ЕСВ. Принят в 1-й половине года (месяц приёма <=
+    shift_months) — расчётная дата попадает на предыдущий год или раньше,
+    т.е. уже прошла к началу планового года — ограничения нет вовсе.
+
+    Пример (shift_months=6, подтверждён пользователем): принят 12.07.2021
+    (любой давний год, стаж больше года) → доступно с 12.01 планового года;
+    принят 12.12.2021 → доступно с 12.06 планового года; принят в июне или
+    раньше — без ограничений.
+    """
+    cutoff_month = hire_date.month - shift_months
+    if cutoff_month <= 0:
+        return None
+    return _date_in_year(planning_year, cutoff_month, hire_date.day)
+
+
+def _validate_bonus_tenure(db: Session, user: User, period_start: date) -> None:
+    """Проходит по стажу дата приёма на работу (User.hire_date, синкается
+    из 1С вместе с днями отпуска — см. app/integrations/vacation_days.py).
+
+    Сравнение — с датой НАЧАЛА ПЛАНИРУЕМОГО ПЕРИОДА (period_start), а не с
+    сегодняшней датой: план на год обычно составляют заранее, и период,
+    который сам по себе наступит уже после набора нужного стажа/отсечки,
+    должен быть доступен для ЕСВ уже сейчас, при планировании — не нужно
+    дожидаться реального наступления даты отсечки, чтобы просто отметить
+    галочку на будущий период (раньше сравнивалось с date.today(), из-за
+    чего нельзя было заранее спланировать ЕСВ на период, дата которого уже
+    прошла отсечку, если сегодняшний день её ещё не достиг).
+
+    Два НЕЗАВИСИМЫХ переключателя (не один с двумя параметрами — это два
+    разных ограничения на разные группы сотрудников, и HR должен мочь
+    включать/выключать их по отдельности), ни один не совпадает с общим
+    выключателем программы ЕСВ (VACATION_BONUS):
+    - VACATION_BONUS_NEW_HIRE — для стажа МЕНЕЕ ГОДА на момент начала периода:
+      одноразовый порог, ЕСВ доступна не раньше N месяцев (params.months,
+      по умолчанию 10) с даты приёма — не привязан к плановому году;
+    - VACATION_BONUS_VETERAN — для стажа ГОД И БОЛЕЕ: ежегодно повторяющееся
+      ограничение, завязанное на плановый год и месяц приёма (см.
+      _veteran_cutoff, params.shift_months, по умолчанию 6).
+
+    Нет hire_date (источник ещё не прислал/не настроен) — ни одно из них не
+    применяется: отсутствие данных не должно блокировать людей.
+    """
+    if user.hire_date is None:
+        return
+
+    one_year_mark = _add_months(user.hire_date, 12)
+
+    if period_start < one_year_mark:
+        setting = restriction_settings_service.get(db, VACATION_BONUS_NEW_HIRE)
+        if setting is None or not setting.enabled:
+            return
+        new_hire_months = setting.params.get("months", 10)
+        eligible_from = _add_months(user.hire_date, new_hire_months)
+        if period_start < eligible_from:
+            raise ValidationFailedError(
+                f"Выплата ЕСВ доступна сотрудникам со стажем менее года не раньше "
+                f"{eligible_from.isoformat()} ({new_hire_months} мес. со дня приёма "
+                f"{user.hire_date.isoformat()}).",
+                {
+                    "eligible_from": str(eligible_from),
+                    "hire_date": str(user.hire_date),
+                    "months": new_hire_months,
+                },
+            )
+        return
+
+    setting = restriction_settings_service.get(db, VACATION_BONUS_VETERAN)
+    if setting is None or not setting.enabled:
+        return
+    veteran_shift_months = setting.params.get("shift_months", 6)
+    planning_year = restriction_settings_service.get_planning_year(db)
+    cutoff = _veteran_cutoff(user.hire_date, planning_year, veteran_shift_months)
+    if cutoff is not None and period_start < cutoff:
+        raise ValidationFailedError(
+            f"Выплата ЕСВ в {planning_year} году доступна не раньше {cutoff.isoformat()} "
+            f"(дата приёма {user.hire_date.isoformat()}).",
+            {"eligible_from": str(cutoff), "hire_date": str(user.hire_date), "planning_year": planning_year},
+        )
+
+
 def _validate_bonus_request(
     db: Session,
     user: User,
@@ -49,19 +155,21 @@ def _validate_bonus_request(
         return
     setting = restriction_settings_service.get(db, VACATION_BONUS)
     if setting is None or not setting.enabled:
-        raise ValidationFailedError("Программа дополнительной выплаты к отпуску сейчас отключена")
+        raise ValidationFailedError("Программа выплаты ЕСВ к отпуску сейчас отключена")
     min_days = setting.params.get("min_days", 14)
-    days = (date_to - date_from).days + 1
+    days = count_leave_days(date_from, date_to)
     if days < min_days:
         raise ValidationFailedError(
-            f"Дополнительную выплату можно запросить только к отпуску длительностью от "
+            f"Выплату ЕСВ можно запросить только к отпуску длительностью от "
             f"{min_days} дн. (выбрано {days} дн.)",
             {"selected_days": days, "min_days": min_days},
         )
 
-    # Доплата — только к одному периоду плана на год, не к каждому периоду
-    # длиннее порога (иначе за один план можно было бы получить доплату
-    # несколько раз). PENDING_APPROVAL/APPROVED тут не проверяем: пока на год
+    _validate_bonus_tenure(db, user, date_from)
+
+    # Выплата ЕСВ — только к одному периоду плана на год, не к каждому
+    # периоду длиннее порога (иначе за один план можно было бы получить
+    # выплату несколько раз). PENDING_APPROVAL/APPROVED тут не проверяем: пока на год
     # есть поданная/согласованная заявка, добавить новый черновик и так
     # нельзя (см. _check_no_active_submission) — единственное реальное
     # пересечение с другим отмеченным периодом возможно среди черновиков.
@@ -164,9 +272,9 @@ def create_draft(
 def update_draft_bonus(
     db: Session, actor: User, request_id: uuid.UUID, bonus_requested: bool
 ) -> LeaveRequest:
-    """Переключает запрос доплаты на уже добавленном черновике.
+    """Переключает запрос выплаты ЕСВ на уже добавленном черновике.
 
-    Отдельная операция, а не флаг при добавлении периода — доплату можно
+    Отдельная операция, а не флаг при добавлении периода — выплату можно
     попросить только для периода длиннее порога, а узнать итоговую
     длительность пользователь может только после завершения выбора дат;
     переключение на уже добавленном черновике не завязано на состояние
@@ -235,7 +343,7 @@ def submit_drafts(
         raise ValidationFailedError("Нет добавленных периодов для отправки")
 
     draft_ids = {d.id for d in drafts}
-    total_days = sum((d.date_to - d.date_from).days + 1 for d in drafts)
+    total_days = sum(count_leave_days(d.date_from, d.date_to) for d in drafts)
 
     if not user.has_benefits:
         available = leave_balance_service.get_remaining_for_new_request(

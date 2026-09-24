@@ -45,3 +45,15 @@ def test_resolve_role_hr_admin_takes_priority_over_manager(db_session):
     db_session.flush()
 
     assert permissions.resolve_role(db_session, user) == permissions.HR_ADMIN
+    # role скрывает совмещение (см. docstring resolve_role) — is_org_unit_head
+    # нужен отдельно, иначе такой HR-admin не увидел бы согласование по своим
+    # же подчинённым (см. HomePage.tsx canApproveOwnTeam).
+    assert permissions.is_org_unit_head(db_session, user) is True
+
+
+def test_is_org_unit_head_false_for_plain_employee(db_session):
+    user = _make_user("plain@test.local")
+    db_session.add(user)
+    db_session.flush()
+
+    assert permissions.is_org_unit_head(db_session, user) is False

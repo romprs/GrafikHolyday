@@ -54,11 +54,16 @@ echo "==> [3/5] Собираю фронтенд (статика, npm нужен 
 )
 cp -r "$ROOT_DIR/frontend/dist" "$BUNDLE_DIR/frontend-dist"
 
-echo "==> [4/5] Копирую исходники бэкенда (без .venv/__pycache__/egg-info)"
+echo "==> [4/5] Копирую исходники бэкенда (без .venv/__pycache__/egg-info/.env)"
 mkdir -p "$BUNDLE_DIR/app/backend"
+# .env исключён намеренно: это локальный файл разработчика (БД, Kerberos,
+# аварийный пароль для ЕГО машины), а не часть исходников. Если он попадёт в
+# бандл, install.sh на целевом сервере перезапишет им уже настроенный боевой
+# .env при повторном запуске (rsync -a --delete в шаге [2/7]) — молча, без
+# предупреждения, стирая всю ранее сделанную настройку авторизации.
 tar -C "$ROOT_DIR/backend" -cf - \
   --exclude='.venv' --exclude='__pycache__' --exclude='*.egg-info' \
-  --exclude='.pytest_cache' \
+  --exclude='.pytest_cache' --exclude='.env' \
   . | tar -C "$BUNDLE_DIR/app/backend" -xf -
 
 echo "==> [5/5] Кладу конфиги установки и упаковываю бандл"

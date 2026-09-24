@@ -93,7 +93,7 @@ export function DelegationsPage() {
   return (
     <div>
       <h3>Делегирование заявок</h3>
-      <p style={{ color: "#888", fontSize: "0.9em" }}>
+      <p className="hint">
         Право подавать и вести заявки на отпуск от имени сотрудника, который сам системой не
         пользуется.{" "}
         {isHrAdmin
@@ -103,128 +103,116 @@ export function DelegationsPage() {
         удобно, когда за отдел отвечает один человек.
       </p>
 
-      <form
-        onSubmit={handleGrant}
-        style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 16 }}
-      >
-        <label>
-          Поиск делегата по фамилии
-          <input
-            type="text"
-            placeholder="напр. Иванов"
-            value={delegateSearch}
-            onChange={(e) => setDelegateSearch(e.target.value)}
-            style={{ display: "block", width: 200 }}
-          />
-        </label>
-        <label>
-          Делегат (кто будет подавать)
-          <select
-            value={delegateId}
-            onChange={(e) => setDelegateId(e.target.value)}
-            required
-            style={{ display: "block", minWidth: 240 }}
-          >
-            <option value="" disabled>
-              — выберите —
-            </option>
-            {filteredDelegateCandidates.map((d: DelegationTargetOut) => (
-              <option key={d.id} value={d.id}>
-                {d.full_name} ({d.email})
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          За кого
-          <select
-            value={scope}
-            onChange={(e) => {
-              setScope(e.target.value as LeaveDelegationScope);
-              setTargetId("");
-            }}
-            style={{ display: "block" }}
-          >
-            <option value="user">Одного сотрудника</option>
-            <option value="org_unit">Всё подразделение</option>
-          </select>
-        </label>
-        {scope === "user" ? (
-          <label>
-            Сотрудник
-            <select
-              value={targetId}
-              onChange={(e) => setTargetId(e.target.value)}
-              required
-              style={{ display: "block", minWidth: 240 }}
-            >
+      <form onSubmit={handleGrant} className="panel">
+        <div className="fieldrow">
+          <div className="field" style={{ width: 200 }}>
+            <label>Поиск делегата по фамилии</label>
+            <input
+              type="text"
+              placeholder="напр. Иванов"
+              value={delegateSearch}
+              onChange={(e) => setDelegateSearch(e.target.value)}
+            />
+          </div>
+          <div className="field" style={{ minWidth: 240 }}>
+            <label>Делегат (кто будет подавать)</label>
+            <select value={delegateId} onChange={(e) => setDelegateId(e.target.value)} required>
               <option value="" disabled>
                 — выберите —
               </option>
-              {employees?.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.full_name} ({e.email})
+              {filteredDelegateCandidates.map((d: DelegationTargetOut) => (
+                <option key={d.id} value={d.id}>
+                  {d.full_name} ({d.email})
                 </option>
               ))}
             </select>
-          </label>
-        ) : (
-          <label>
-            Подразделение
+          </div>
+          <div className="field">
+            <label>За кого</label>
             <select
-              value={targetId}
-              onChange={(e) => setTargetId(e.target.value)}
-              required
-              style={{ display: "block", minWidth: 240 }}
+              value={scope}
+              onChange={(e) => {
+                setScope(e.target.value as LeaveDelegationScope);
+                setTargetId("");
+              }}
             >
-              <option value="" disabled>
-                — выберите —
-              </option>
-              {orgUnits?.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
+              <option value="user">Одного сотрудника</option>
+              <option value="org_unit">Всё подразделение</option>
             </select>
-          </label>
-        )}
-        <button type="submit">Выдать</button>
-        {error && <span style={{ color: "crimson" }}>{error}</span>}
+          </div>
+          {scope === "user" ? (
+            <div className="field" style={{ minWidth: 240 }}>
+              <label>Сотрудник</label>
+              <select value={targetId} onChange={(e) => setTargetId(e.target.value)} required>
+                <option value="" disabled>
+                  — выберите —
+                </option>
+                {employees?.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.full_name} ({e.email})
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="field" style={{ minWidth: 240 }}>
+              <label>Подразделение</label>
+              <select value={targetId} onChange={(e) => setTargetId(e.target.value)} required>
+                <option value="" disabled>
+                  — выберите —
+                </option>
+                {orgUnits?.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+        <button type="submit" className="btn-primary">
+          Выдать
+        </button>
+        {error && <span className="error-text"> {error}</span>}
       </form>
 
-      <table style={{ borderCollapse: "collapse", width: "100%" }}>
-        <thead>
-          <tr>
-            <th style={{ textAlign: "left" }}>Делегат</th>
-            <th style={{ textAlign: "left" }}>За кого</th>
-            <th style={{ textAlign: "left" }}>Выдано</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {active.length === 0 && (
+      <div className="panel">
+        <table className="t">
+          <thead>
             <tr>
-              <td colSpan={4} style={{ color: "#888" }}>
-                Делегирований нет.
-              </td>
+              <th>Делегат</th>
+              <th>За кого</th>
+              <th>Выдано</th>
+              <th />
             </tr>
-          )}
-          {active.map((d) => (
-            <tr key={d.id}>
-              <td>{userLabel(d.delegate_user_id)}</td>
-              <td>
-                {d.scope === "user"
-                  ? userLabel(d.target_user_id ?? "")
-                  : `Подразделение: ${unitLabel(d.target_org_unit_id ?? "")} (и нижестоящие)`}
-              </td>
-              <td>{new Date(d.created_at).toLocaleDateString("ru-RU")}</td>
-              <td>
-                <button onClick={() => handleRevoke(d.id)}>Отозвать</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {active.length === 0 && (
+              <tr>
+                <td colSpan={4} className="empty">
+                  Делегирований нет.
+                </td>
+              </tr>
+            )}
+            {active.map((d) => (
+              <tr key={d.id}>
+                <td>{userLabel(d.delegate_user_id)}</td>
+                <td>
+                  {d.scope === "user"
+                    ? userLabel(d.target_user_id ?? "")
+                    : `Подразделение: ${unitLabel(d.target_org_unit_id ?? "")} (и нижестоящие)`}
+                </td>
+                <td>{new Date(d.created_at).toLocaleDateString("ru-RU")}</td>
+                <td>
+                  <button className="btn-ghost" onClick={() => handleRevoke(d.id)}>
+                    Отозвать
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

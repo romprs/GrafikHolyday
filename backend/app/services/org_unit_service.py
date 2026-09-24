@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import NotFoundError, ValidationFailedError
 from app.models.org_unit import OrgUnit
 from app.models.user import User
-from app.services import permissions
+from app.services import audit_service, permissions
+
+ENTITY_ORG_UNIT = "org_unit"
 
 
 def ancestor_ids(db: Session, org_unit_id: uuid.UUID) -> list[uuid.UUID]:
@@ -65,8 +67,29 @@ def visible_unit_ids(db: Session, user: User) -> list[uuid.UUID] | None:
     return list(unit_ids)
 
 
+def approval_unit_ids(db: Session, user: User) -> list[uuid.UUID] | None:
+    """Подразделения, чьи заявки пользователь может согласовывать — шире,
+    чем visible_unit_ids (та завязана на роль "manager", которую даёт
+    только head_user_id): сюда дополнительно попадает СОБСТВЕННОЕ
+    подразделение сотрудника (и всё, что ниже), если ему явно выдано право
+    согласования (User.is_approver) — например, заместителю руководителя
+    на время его отсутствия, без переназначения head_user_id. Не влияет на
+    остальные права "manager" (оргструктура, делегирование и т.п.) — только
+    на согласование заявок, поэтому не переиспользует visible_unit_ids."""
+    if permissions.resolve_role(db, user) == permissions.HR_ADMIN:
+        return None
+
+    unit_ids: set[uuid.UUID] = set()
+    for unit_id in headed_unit_ids(db, user.id):
+        unit_ids.update(descendant_ids(db, unit_id))
+    if user.is_approver and user.org_unit_id is not None:
+        unit_ids.update(descendant_ids(db, user.org_unit_id))
+    return list(unit_ids)
+
+
 def create(
     db: Session,
+    actor: User,
     name: str,
     unit_kind: str | None,
     parent_id: uuid.UUID | None,
@@ -80,6 +103,17 @@ def create(
         raise NotFoundError("Родительское подразделение не найдено")
     unit = OrgUnit(name=name, unit_kind=unit_kind, parent_id=parent_id, head_user_id=head_user_id)
     db.add(unit)
+    db.flush()
+    audit_service.log(
+        db,
+        ENTITY_ORG_UNIT,
+        unit.id,
+        "create",
+        actor,
+        f"Создано подразделение вручную: {unit.name}",
+        {},
+        {"name": unit.name, "parent_id": str(parent_id) if parent_id else None},
+    )
     db.commit()
     db.refresh(unit)
     return unit
@@ -87,6 +121,7 @@ def create(
 
 def update(
     db: Session,
+    actor: User,
     unit_id: uuid.UUID,
     name: str,
     unit_kind: str | None,
@@ -126,20 +161,42 @@ def update(
                 "сначала перенесите их в другое подразделение"
             )
 
+    before = {
+        "name": unit.name,
+        "unit_kind": unit.unit_kind,
+        "parent_id": str(unit.parent_id) if unit.parent_id else None,
+        "head_user_id": str(unit.head_user_id) if unit.head_user_id else None,
+        "is_active": unit.is_active,
+    }
+    was_active = unit.is_active
+
     unit.name = name
     unit.unit_kind = unit_kind
     unit.parent_id = parent_id
     unit.head_user_id = head_user_id
     unit.is_active = is_active
+
+    after = {
+        "name": unit.name,
+        "unit_kind": unit.unit_kind,
+        "parent_id": str(unit.parent_id) if unit.parent_id else None,
+        "head_user_id": str(unit.head_user_id) if unit.head_user_id else None,
+        "is_active": unit.is_active,
+    }
+    action = "deactivate" if was_active and not is_active else "reactivate" if not was_active and is_active else "update"
+    audit_service.log(
+        db, ENTITY_ORG_UNIT, unit.id, action, actor, f"Изменено подразделение: {unit.name}", before, after
+    )
+
     db.commit()
     db.refresh(unit)
     return unit
 
 
-def deactivate(db: Session, unit_id: uuid.UUID) -> OrgUnit:
+def deactivate(db: Session, actor: User, unit_id: uuid.UUID) -> OrgUnit:
     unit = db.get(OrgUnit, unit_id)
     if unit is None:
         raise NotFoundError("Подразделение не найдено")
     return update(
-        db, unit_id, unit.name, unit.unit_kind, unit.parent_id, unit.head_user_id, is_active=False
+        db, actor, unit_id, unit.name, unit.unit_kind, unit.parent_id, unit.head_user_id, is_active=False
     )

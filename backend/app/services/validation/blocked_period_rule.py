@@ -22,11 +22,14 @@ def check(
     if not blocks:
         return None
 
-    first = blocks[0]
+    # Раньше в текст ошибки попадал только blocks[0] — если период пересекал
+    # сразу несколько недоступных периодов (например, два учебных курса
+    # подряд), сотрудник видел только первый и не понимал, что мешает ещё
+    # что-то. Перечисляем все пересечения.
+    listed = "; ".join(f"{b.reason} ({b.date_from} — {b.date_to})" for b in blocks)
     return Violation(
         code="BLOCKED_PERIOD_OVERLAP",
-        message_ru=f"Период пересекается с недоступным периодом: {first.reason} "
-        f"({first.date_from} — {first.date_to}).",
+        message_ru=f"Период пересекается с недоступными периодами: {listed}.",
         params={
             "blocked_periods": [
                 {"date_from": str(b.date_from), "date_to": str(b.date_to), "reason": b.reason}

@@ -45,6 +45,25 @@ def test_overlapping_request_rejected(db_session, settings_enabled, hr):
     assert any(v.code == "BLOCKED_PERIOD_OVERLAP" for v in violations)
 
 
+def test_overlap_with_multiple_periods_lists_all_in_message(db_session, settings_enabled, hr):
+    employee = User(email="e4@test.local", full_name="e4")
+    db_session.add(employee)
+    db_session.flush()
+
+    blocked_period_service.create(
+        db_session, hr, date(2026, 6, 1), date(2026, 6, 3), "Курс А", GLOBAL, None, None
+    )
+    blocked_period_service.create(
+        db_session, hr, date(2026, 6, 4), date(2026, 6, 10), "Курс Б", GLOBAL, None, None
+    )
+
+    violations = validate_leave_request(db_session, employee, date(2026, 6, 2), date(2026, 6, 9))
+    overlap = next(v for v in violations if v.code == "BLOCKED_PERIOD_OVERLAP")
+    assert "Курс А" in overlap.message_ru
+    assert "Курс Б" in overlap.message_ru
+    assert len(overlap.params["blocked_periods"]) == 2
+
+
 def test_has_benefits_bypasses_blocked_period(db_session, settings_enabled, hr):
     employee = User(email="e2@test.local", full_name="e2", has_benefits=True)
     db_session.add(employee)

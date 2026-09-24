@@ -25,6 +25,8 @@ class LeaveRequestAdminOverride(BaseModel):
     date_from: date | None = None
     date_to: date | None = None
     status: str | None = None
+    bonus_requested: bool | None = None
+    whole_submission: bool = False
 
 
 class LeaveRequestOut(BaseModel):
@@ -52,6 +54,14 @@ class LeaveRequestWithEmployeeOut(LeaveRequestOut):
     согласованных заявок, где руководителю нужно видеть, чья это заявка."""
 
     user_full_name: str
+
+
+class LeaveRequestAdminOut(LeaveRequestWithEmployeeOut):
+    """Для страницы «Все заявки» (HR) — дополнительно подразделение, чтобы
+    можно было понять, чья заявка и откуда, а не только период/статус."""
+
+    org_unit_id: uuid.UUID | None
+    org_unit_name: str | None
 
 
 class LeaveBalanceOut(BaseModel):

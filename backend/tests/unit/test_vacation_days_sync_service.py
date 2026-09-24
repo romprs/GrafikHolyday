@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 
 import pytest
 
@@ -95,6 +96,37 @@ def test_all_employees_failing_marks_run_failed(db_session, employee, hr_admin_i
 
     assert run.status == "failed"  # единственный сотрудник и тот упал
     assert run.summary["employees_failed"] == 1
+
+
+def test_sets_hire_and_termination_date(db_session, employee, hr_admin_id):
+    client = StubClient(
+        {
+            "6378": VacationDaysEntryDTO(
+                days_count=36,
+                is_beneficiary=False,
+                hire_date=date(2027, 9, 1),
+                termination_date=None,
+            )
+        }
+    )
+    vacation_days_sync_service.run_sync(db_session, client, 2026, "manual", hr_admin_id)
+
+    db_session.refresh(employee)
+    assert employee.hire_date == date(2027, 9, 1)
+    assert employee.termination_date is None
+
+
+def test_empty_hire_date_does_not_clear_already_known_value(db_session, employee, hr_admin_id):
+    employee.hire_date = date(2027, 9, 1)
+    db_session.flush()
+
+    client = StubClient(
+        {"6378": VacationDaysEntryDTO(days_count=36, is_beneficiary=False, hire_date=None)}
+    )
+    vacation_days_sync_service.run_sync(db_session, client, 2026, "manual", hr_admin_id)
+
+    db_session.refresh(employee)
+    assert employee.hire_date == date(2027, 9, 1)
 
 
 def test_partial_status_when_some_employees_fail(db_session, employee, hr_admin_id):

@@ -50,19 +50,19 @@ def list_org_unit_employees(db: DbSession, user: CurrentUser) -> list[OrgUnitEmp
 
 
 @router.post("", response_model=OrgUnitOut)
-def create_org_unit(body: OrgUnitCreate, db: DbSession, _: HrAdmin) -> OrgUnitOut:
-    return org_unit_service.create(db, body.name, body.unit_kind, body.parent_id, body.head_user_id)
+def create_org_unit(body: OrgUnitCreate, db: DbSession, actor: HrAdmin) -> OrgUnitOut:
+    return org_unit_service.create(db, actor, body.name, body.unit_kind, body.parent_id, body.head_user_id)
 
 
 @router.patch("/{unit_id}", response_model=OrgUnitOut)
 def update_org_unit(
-    unit_id: uuid.UUID, body: OrgUnitUpdate, db: DbSession, _: HrAdmin
+    unit_id: uuid.UUID, body: OrgUnitUpdate, db: DbSession, actor: HrAdmin
 ) -> OrgUnitOut:
     return org_unit_service.update(
-        db, unit_id, body.name, body.unit_kind, body.parent_id, body.head_user_id, body.is_active
+        db, actor, unit_id, body.name, body.unit_kind, body.parent_id, body.head_user_id, body.is_active
     )
 
 
 @router.delete("/{unit_id}", response_model=OrgUnitOut)
-def delete_org_unit(unit_id: uuid.UUID, db: DbSession, _: HrAdmin) -> OrgUnitOut:
-    return org_unit_service.deactivate(db, unit_id)
+def delete_org_unit(unit_id: uuid.UUID, db: DbSession, actor: HrAdmin) -> OrgUnitOut:
+    return org_unit_service.deactivate(db, actor, unit_id)

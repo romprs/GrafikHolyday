@@ -1,12 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import {
-  apiFetch,
-  getAdminFallbackCreds,
-  getDevUserId,
-  setAdminFallbackCreds,
-  setDevUserId,
-} from "../api/client";
+import { apiFetch, setAdminFallbackCreds, setDevUserId } from "../api/client";
 import type { CurrentUserOut, UserOut } from "../api/types";
 
 interface AuthState {
@@ -26,11 +20,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [devUsers, setDevUsers] = useState<UserOut[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Запрос всегда выполняется безусловно, даже без выбранного dev-пользователя
+  // и без аварийных креды — это единственный способ дать браузеру шанс
+  // самостоятельно провести SPNEGO-согласование в Kerberos-режиме (там нет
+  // никакого явного "маркера входа" на стороне фронтенда, всё решает сам
+  // браузер через WWW-Authenticate: Negotiate). Для dev/аварийного режима без
+  // сохранённых креды поведение не меняется — тот же 401/403, тот же результат.
   const refreshMe = async () => {
-    if (!getDevUserId() && !getAdminFallbackCreds()) {
-      setCurrentUser(null);
-      return;
-    }
     try {
       const me = await apiFetch<CurrentUserOut>("/users/me");
       setCurrentUser(me);

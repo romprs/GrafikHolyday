@@ -23,6 +23,9 @@ def _with_role(u: User, role: str) -> UserWithRoleOut:
         is_active=u.is_active,
         role=role,
         employee_code=u.employee_code,
+        hire_date=u.hire_date,
+        termination_date=u.termination_date,
+        is_approver=u.is_approver,
     )
 
 
@@ -32,26 +35,36 @@ def list_users(db: DbSession, _: HrAdmin) -> list[UserWithRoleOut]:
 
 
 @router.post("", response_model=UserWithRoleOut)
-def create_user(body: UserCreate, db: DbSession, _: HrAdmin) -> UserWithRoleOut:
+def create_user(body: UserCreate, db: DbSession, actor: HrAdmin) -> UserWithRoleOut:
     user = user_admin_service.create_user(
-        db, body.email, body.full_name, body.org_unit_id, body.has_benefits, body.employee_code
+        db, actor, body.email, body.full_name, body.org_unit_id, body.has_benefits, body.employee_code
     )
     role = permissions.resolve_role(db, user)
     return _with_role(user, role)
 
 
 @router.patch("/{user_id}", response_model=UserWithRoleOut)
-def update_user(user_id: uuid.UUID, body: UserUpdate, db: DbSession, _: HrAdmin) -> UserWithRoleOut:
+def update_user(user_id: uuid.UUID, body: UserUpdate, db: DbSession, actor: HrAdmin) -> UserWithRoleOut:
     user = user_admin_service.update_user(
-        db, user_id, body.email, body.full_name, body.org_unit_id, body.has_benefits, body.is_active
+        db,
+        actor,
+        user_id,
+        body.email,
+        body.full_name,
+        body.org_unit_id,
+        body.has_benefits,
+        body.is_active,
+        hire_date=body.hire_date,
+        termination_date=body.termination_date,
+        is_approver=body.is_approver,
     )
     role = permissions.resolve_role(db, user)
     return _with_role(user, role)
 
 
 @router.delete("/{user_id}", response_model=UserWithRoleOut)
-def delete_user(user_id: uuid.UUID, db: DbSession, _: HrAdmin) -> UserWithRoleOut:
-    user = user_admin_service.deactivate_user(db, user_id)
+def delete_user(user_id: uuid.UUID, db: DbSession, actor: HrAdmin) -> UserWithRoleOut:
+    user = user_admin_service.deactivate_user(db, actor, user_id)
     role = permissions.resolve_role(db, user)
     return _with_role(user, role)
 

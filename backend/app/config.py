@@ -42,5 +42,11 @@ class Settings(BaseSettings):
     # (см. app/auth/admin_fallback.py, app/dependencies.py). Пусто = выключено.
     admin_fallback_password: str | None = None
 
+    # Автозапуск синхронизаций по расписанию (poll_interval_minutes у
+    # источника в настройках) — см. app/scheduler.py. По умолчанию включён;
+    # выключатель на случай техобслуживания/отладки, когда нежелательны
+    # фоновые запуски синка.
+    enable_sync_scheduler: bool = True
+
 
 settings = Settings()

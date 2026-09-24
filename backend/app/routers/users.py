@@ -10,4 +10,6 @@ router = APIRouter(prefix="/users", tags=["users"])
 @router.get("/me", response_model=CurrentUserOut)
 def get_me(db: DbSession, user: CurrentUser) -> CurrentUserOut:
     role = permissions.resolve_role(db, user)
-    return CurrentUserOut(**user.__dict__, role=role)
+    return CurrentUserOut(
+        **user.__dict__, role=role, is_org_unit_head=permissions.is_org_unit_head(db, user)
+    )

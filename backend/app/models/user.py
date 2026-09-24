@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -28,3 +28,15 @@ class User(UUIDPKMixin, TimestampMixin, Base):
     last_synced_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Дата приёма и увольнения — из того же источника 1С, что и дни отпуска
+    # (см. app/integrations/vacation_days.py). Нужны для ограничения на
+    # выплату ЕСВ по стажу (см. validation/vacation_bonus_tenure_rule.py).
+    hire_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    termination_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Право согласовывать заявки своего подразделения независимо от того,
+    # является ли сотрудник head_user_id юнита (см. permissions/approval_service) —
+    # для замещения руководителя (например, во время его отсутствия) без
+    # переназначения самого head_user_id. У фактических руководителей право
+    # согласования и так есть через head_user_id — этот флаг только
+    # РАСШИРЯЕТ круг согласующих, не сужает его.
+    is_approver: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

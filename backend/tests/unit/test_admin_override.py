@@ -87,3 +87,54 @@ def test_override_rejects_invalid_date_range(db_session, scenario):
             date_from=date(2026, 6, 10),
             date_to=date(2026, 6, 5),
         )
+
+
+def test_override_touches_only_one_period_of_a_submission(db_session, scenario):
+    import uuid
+
+    sub = uuid.uuid4()
+    first = scenario["request"]
+    first.submission_id = sub
+    second = LeaveRequest(
+        user_id=scenario["employee"].id,
+        leave_type_id=first.leave_type_id,
+        date_from=date(2026, 11, 1),
+        date_to=date(2026, 11, 20),
+        status=APPROVED,
+        submission_id=sub,
+    )
+    db_session.add(second)
+    db_session.flush()
+
+    approval_service.admin_override(
+        db_session, scenario["hr"], first.id, reason="точечная правка", status=CANCELLED
+    )
+    db_session.refresh(second)
+    assert first.status == CANCELLED
+    assert second.status == APPROVED
+    assert second.date_from == date(2026, 11, 1)
+
+
+def test_cancel_whole_submission_cancels_all_periods(db_session, scenario):
+    import uuid
+
+    sub = uuid.uuid4()
+    first = scenario["request"]
+    first.submission_id = sub
+    second = LeaveRequest(
+        user_id=scenario["employee"].id,
+        leave_type_id=first.leave_type_id,
+        date_from=date(2026, 11, 1),
+        date_to=date(2026, 11, 20),
+        status=APPROVED,
+        submission_id=sub,
+    )
+    db_session.add(second)
+    db_session.flush()
+
+    approval_service.admin_override(
+        db_session, scenario["hr"], first.id, reason="отмена заявки", status=CANCELLED, whole_submission=True
+    )
+    db_session.refresh(second)
+    assert first.status == CANCELLED
+    assert second.status == CANCELLED

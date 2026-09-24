@@ -41,8 +41,19 @@ OWN_OVERLAP_CHECK = "own_overlap_check"
 # механизм настроек ради одного значения.
 PLANNING_YEAR = "planning_year"
 # Порог длительности отпуска (в днях), после которого можно запросить
-# дополнительную выплату к отпуску. enabled=False отключает программу целиком.
+# выплату ЕСВ к отпуску. enabled=False отключает программу целиком.
 VACATION_BONUS = "vacation_bonus"
+# Два НЕЗАВИСИМЫХ ограничения на выплату ЕСВ по стажу (разные механики,
+# разные группы сотрудников — включаются/выключаются раздельно, отдельные
+# настройки, а не два параметра одной):
+# - новичкам (стаж < года): ЕСВ доступна не раньше params["months"] месяцев
+#   с даты приёма (User.hire_date) — одноразовый порог;
+# - стажистам (стаж >= года): ежегодно повторяющееся ограничение по месяцу
+#   приёма и текущему плановому году — см. leave_request_service._veteran_cutoff.
+# enabled=False у каждой отключает именно её (программа ЕСВ в целом
+# продолжает работать по порогу VACATION_BONUS).
+VACATION_BONUS_NEW_HIRE = "vacation_bonus_new_hire_restriction"
+VACATION_BONUS_VETERAN = "vacation_bonus_veteran_restriction"
 # Параметры подключения к внешней системе-источнику оргструктуры (отделы) —
 # редактируется в админке, реальный клиент см. app/integrations/org_directory.py.
 EXTERNAL_SOURCE_CONNECTION = "external_source_connection"

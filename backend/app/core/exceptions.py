@@ -1,5 +1,9 @@
+import logging
+
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
+
+logger = logging.getLogger(__name__)
 
 
 class DomainError(Exception):
@@ -52,6 +56,22 @@ class ConflictError(DomainError):
 
 
 async def domain_error_handler(request: Request, exc: DomainError) -> JSONResponse:
+    # Единая точка логирования отказов авторизации — не нужно расставлять
+    # logger по каждому месту в auth/kerberos_provider.py и dependencies.py,
+    # message_ru там и так уже содержит причину (нет заголовка от nginx,
+    # логин не сопоставился ни с одним пользователем и т.п.). AuthChallengeError
+    # — на INFO: это ожидаемый первый шаг обычного SPNEGO-рукопожатия
+    # (запрос без тикета), а не обязательно поломка. ForbiddenError — на
+    # WARNING: тикет/логин дошли до проверки и были отклонены по существу.
+    if isinstance(exc, AuthChallengeError):
+        logger.info(
+            "Auth challenge (%s %s): %s", request.method, request.url.path, exc.message_ru
+        )
+    elif isinstance(exc, ForbiddenError):
+        logger.warning(
+            "Доступ запрещён (%s %s): %s", request.method, request.url.path, exc.message_ru
+        )
+
     headers = (
         {"WWW-Authenticate": exc.www_authenticate}
         if isinstance(exc, AuthChallengeError)

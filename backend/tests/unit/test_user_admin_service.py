@@ -78,7 +78,7 @@ def test_create_user(db_session, users):
     db_session.flush()
 
     user = user_admin_service.create_user(
-        db_session, "new@test.local", "Новый Сотрудник", unit.id, False, "3300"
+        db_session, users["hr"], "new@test.local", "Новый Сотрудник", unit.id, False, "3300"
     )
     assert user.email == "new@test.local"
     assert user.org_unit_id == unit.id
@@ -87,19 +87,19 @@ def test_create_user(db_session, users):
 
 def test_create_user_rejects_duplicate_email(db_session, users):
     with pytest.raises(ValidationFailedError):
-        user_admin_service.create_user(db_session, "hr@admin.local", "Клон", None, False, None)
+        user_admin_service.create_user(db_session, users["hr"], "hr@admin.local", "Клон", None, False, None)
 
 
 def test_create_user_rejects_unknown_org_unit(db_session, users):
     import uuid
 
     with pytest.raises(NotFoundError):
-        user_admin_service.create_user(db_session, "new@test.local", "Новый", uuid.uuid4(), False, None)
+        user_admin_service.create_user(db_session, users["hr"], "new@test.local", "Новый", uuid.uuid4(), False, None)
 
 
 def test_update_user(db_session, users):
     updated = user_admin_service.update_user(
-        db_session, users["employee"].id, "renamed@test.local", "Переименован", None, True, True
+        db_session, users["hr"], users["employee"].id, "renamed@test.local", "Переименован", None, True, True
     )
     assert updated.email == "renamed@test.local"
     assert updated.has_benefits is True
@@ -110,6 +110,6 @@ def test_deactivate_user_clears_head_of_unit(db_session, users):
     db_session.add(unit)
     db_session.flush()
 
-    user_admin_service.deactivate_user(db_session, users["employee"].id)
+    user_admin_service.deactivate_user(db_session, users["hr"], users["employee"].id)
     db_session.refresh(unit)
     assert unit.head_user_id is None

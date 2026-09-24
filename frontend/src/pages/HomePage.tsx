@@ -4,6 +4,8 @@ import { useAuth } from "../auth/AuthContext";
 import { getRestrictionSettings } from "../api/calendar";
 import { listMyDelegationTargets } from "../api/delegations";
 import { listMyLeaveRequests } from "../api/leaveRequests";
+import { NavIcon, type NavIconKey } from "../navIcons";
+import { useTheme } from "../useTheme";
 import { AllRequestsPage } from "./AllRequestsPage";
 import { ApprovalQueuePage } from "./ApprovalQueuePage";
 import { AuditLogPage } from "./AuditLogPage";
@@ -35,6 +37,7 @@ type Tab =
 export function HomePage() {
   const { currentUser, logout } = useAuth();
   const [tab, setTab] = useState<Tab>("my-requests");
+  const [theme, toggleTheme] = useTheme();
 
   const { data: restrictionSettings } = useQuery({
     queryKey: ["restriction-settings"],
@@ -77,82 +80,99 @@ export function HomePage() {
     }
   }, [tab, canSubmitNewRequest]);
 
-  // HR-админ по умолчанию попал бы на скрытую для него вкладку "Мои
-  // заявки" — переключаем на первую доступную, как только известна роль.
-  useEffect(() => {
-    if (currentUser?.role === "hr_admin" && tab === "my-requests") {
-      setTab("org-directory");
-    }
-  }, [currentUser?.role, tab]);
-
   if (!currentUser) return null;
 
   const isManager = currentUser.role === "manager";
   const isHrAdmin = currentUser.role === "hr_admin";
   const isManagerOrHr = isManager || isHrAdmin;
+  // role — это ПРИОРИТЕТ (hr_admin перекрывает manager на бэкенде), поэтому
+  // HR-admin, который одновременно возглавляет подразделение, не совпадает
+  // с isManager — без отдельного флага не увидел бы согласование по своим
+  // же подчинённым. is_approver — то же самое для заместителя руководителя,
+  // которому право согласования выдано вручную (см. OrgDirectoryPage).
+  const canApproveOwnTeam = isManager || currentUser.is_org_unit_head || currentUser.is_approver;
 
-  // HR-админ заявки на отпуск сам не подаёт и не согласовывает через этот
-  // интерфейс (для этого есть admin-override и делегирование) — поэтому
-  // сотруднические вкладки ему не показываем.
-  const tabs: { id: Tab; label: string; visible: boolean }[] = [
-    { id: "my-requests", label: "Мои заявки", visible: !isHrAdmin },
-    { id: "new-request", label: "Новая заявка", visible: !isHrAdmin && canSubmitNewRequest },
-    { id: "approvals", label: "Согласование", visible: isManager },
-    { id: "blocked-periods", label: "Недоступные периоды", visible: isManagerOrHr },
-    { id: "org-directory", label: "Оргструктура и сотрудники", visible: isManagerOrHr },
-    { id: "org-load", label: "Отпуска подразделений", visible: isManagerOrHr },
-    { id: "delegations", label: "Делегирование", visible: isManagerOrHr },
-    { id: "sync", label: "Синхронизация", visible: isHrAdmin },
-    { id: "restriction-settings", label: "Ограничения", visible: isHrAdmin },
-    { id: "integrations", label: "Интеграции", visible: isHrAdmin },
-    { id: "all-requests", label: "Все заявки", visible: isHrAdmin },
-    { id: "audit-log", label: "Журнал изменений", visible: isHrAdmin },
+  // HR-админ — такой же сотрудник, как и все, и тоже уходит в отпуск: сам
+  // подаёт заявки на общих основаниях (согласовывает их его руководитель,
+  // если он есть, — админ-роль на это не влияет).
+  const tabs: { id: Tab; label: string; visible: boolean; icon: NavIconKey; group?: string }[] = [
+    { id: "my-requests", label: "Мои заявки", visible: true, icon: "doc" },
+    { id: "new-request", label: "Новая заявка", visible: canSubmitNewRequest, icon: "plus" },
+    { id: "approvals", label: "Согласование", visible: canApproveOwnTeam, icon: "star", group: "Подразделение" },
+    { id: "blocked-periods", label: "Недоступные периоды", visible: isManagerOrHr, icon: "lock", group: "Подразделение" },
+    { id: "org-directory", label: "Оргструктура и сотрудники", visible: isManagerOrHr, icon: "users", group: "Подразделение" },
+    { id: "org-load", label: "Отпуска подразделений", visible: isManagerOrHr, icon: "grid", group: "Подразделение" },
+    { id: "delegations", label: "Делегирование", visible: isManagerOrHr, icon: "swap", group: "Подразделение" },
+    { id: "sync", label: "Синхронизация", visible: isHrAdmin, icon: "sync", group: "Администрирование" },
+    { id: "restriction-settings", label: "Ограничения", visible: isHrAdmin, icon: "sliders", group: "Администрирование" },
+    { id: "integrations", label: "Интеграции", visible: isHrAdmin, icon: "plug", group: "Администрирование" },
+    { id: "all-requests", label: "Все заявки", visible: isHrAdmin, icon: "all", group: "Администрирование" },
+    { id: "audit-log", label: "Журнал изменений", visible: isHrAdmin, icon: "clock", group: "Администрирование" },
   ];
 
+  const visibleTabs = tabs.filter((t) => t.visible);
+  const groupOrder = [undefined, "Подразделение", "Администрирование"] as const;
+
   return (
-    <div style={{ maxWidth: 2000, margin: "2rem auto", fontFamily: "sans-serif", padding: "0 16px" }}>
-      <h1>Планирование отпусков</h1>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <p style={{ margin: 0 }}>
-          Вы вошли как <strong>{currentUser.full_name}</strong> ({roleLabel(currentUser.role)})
-          {currentUser.has_benefits && " — есть льготы"}
-        </p>
-        <button onClick={logout}>Выйти</button>
-      </div>
-
-      <nav style={{ display: "flex", gap: 8, margin: "16px 0", borderBottom: "1px solid #ccc", flexWrap: "wrap" }}>
-        {tabs
-          .filter((t) => t.visible)
-          .map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              style={{
-                padding: "6px 12px",
-                fontWeight: tab === t.id ? "bold" : "normal",
-                background: "none",
-                border: "none",
-                borderBottom: tab === t.id ? "2px solid #333" : "2px solid transparent",
-                cursor: "pointer",
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
-      </nav>
-
-      {tab === "my-requests" && <MyRequestsPage />}
-      {tab === "new-request" && <RequestFormPage />}
-      {tab === "approvals" && <ApprovalQueuePage />}
-      {tab === "blocked-periods" && <BlockedPeriodsPage />}
-      {tab === "org-directory" && <OrgDirectoryPage />}
-      {tab === "org-load" && <OrgLoadDashboardPage />}
-      {tab === "delegations" && <DelegationsPage />}
-      {tab === "sync" && <SyncPage />}
-      {tab === "restriction-settings" && <RestrictionSettingsPage />}
-      {tab === "integrations" && <IntegrationsSettingsPage />}
-      {tab === "all-requests" && <AllRequestsPage />}
-      {tab === "audit-log" && <AuditLogPage />}
+    <div className="app-shell">
+      <aside className="app-rail">
+        <div className="app-brand">
+          <span className="dot" />
+          <span>Отпуска</span>
+        </div>
+        <nav>
+          {groupOrder.map((group) => {
+            const items = visibleTabs.filter((t) => t.group === group);
+            if (items.length === 0) return null;
+            const Icon = (key: NavIconKey) => NavIcon[key];
+            return (
+              <div className="rail-group" key={group ?? "base"}>
+                {group && <div className="gtitle">{group}</div>}
+                {items.map((t) => {
+                  const IconComp = Icon(t.icon);
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      className={`navlink${tab === t.id ? " on" : ""}`}
+                      onClick={() => setTab(t.id)}
+                    >
+                      <IconComp />
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </nav>
+        <div className="who">
+          <strong>{currentUser.full_name}</strong>
+          <br />
+          {roleLabel(currentUser.role)}
+          {currentUser.has_benefits && " · есть льготы"}
+          <button type="button" className="btn-ghost logout" onClick={logout} style={{ padding: "4px 0" }}>
+            Выйти
+          </button>
+          <button type="button" className="theme-toggle" onClick={toggleTheme}>
+            {theme === "light" ? "🌙 Тёмная тема" : "☀ Светлая тема"}
+          </button>
+        </div>
+      </aside>
+      <main className="app-main">
+        {tab === "my-requests" && <MyRequestsPage />}
+        {tab === "new-request" && <RequestFormPage />}
+        {tab === "approvals" && <ApprovalQueuePage />}
+        {tab === "blocked-periods" && <BlockedPeriodsPage />}
+        {tab === "org-directory" && <OrgDirectoryPage />}
+        {tab === "org-load" && <OrgLoadDashboardPage />}
+        {tab === "delegations" && <DelegationsPage />}
+        {tab === "sync" && <SyncPage />}
+        {tab === "restriction-settings" && <RestrictionSettingsPage />}
+        {tab === "integrations" && <IntegrationsSettingsPage />}
+        {tab === "all-requests" && <AllRequestsPage />}
+        {tab === "audit-log" && <AuditLogPage />}
+      </main>
     </div>
   );
 }

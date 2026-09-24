@@ -7,12 +7,32 @@ from sqlalchemy.orm import Session
 
 from app.integrations.vacation_days import VacationDaysClient
 from app.models.leave_balance import LeaveBalance
+from app.models.restriction_settings import VACATION_DAYS_SOURCE
 from app.models.sync import KIND_VACATION_DAYS, SyncChangeLog, SyncRun
 from app.models.user import User
+from app.services import restriction_settings_service
 
 logger = logging.getLogger(__name__)
 
 VACATION_DAYS_ENTITY = "vacation_days"
+
+
+def build_client(db: Session) -> VacationDaysClient | None:
+    """None — источник не настроен/выключен, вызывающая сторона решает, что
+    делать (роутер — вернуть ошибку пользователю, планировщик — тихо
+    пропустить цикл)."""
+    setting = restriction_settings_service.get(db, VACATION_DAYS_SOURCE)
+    if setting is None or not setting.enabled:
+        return None
+    base_url = setting.params.get("base_url") or ""
+    if not base_url:
+        return None
+    return VacationDaysClient(
+        base_url=base_url,
+        login=setting.params.get("auth_login") or "",
+        password=setting.params.get("auth_password") or "",
+        verify_tls=bool(setting.params.get("verify_tls", False)),
+    )
 
 
 def run_sync(
@@ -20,7 +40,7 @@ def run_sync(
     client: VacationDaysClient,
     year: int,
     trigger_type: str,
-    triggered_by: uuid.UUID,
+    triggered_by: uuid.UUID | None,
 ) -> SyncRun:
     """Остаток дней отпуска и признак льготника — отдельный источник от
     оргструктуры/сотрудников, запрашивается по одному табельному номеру за
@@ -76,6 +96,15 @@ def run_sync(
         if user.has_benefits != entry.is_beneficiary:
             user.has_benefits = entry.is_beneficiary
             summary["benefits_changed"] += 1
+
+        # Источник может прислать пустое значение (ещё не заполнено на его
+        # стороне) — не затираем уже известную дату None'ом, только
+        # обновляем, когда реально пришло значение (та же логика, что и у
+        # employee_code в sync_service._resolve_employee_code).
+        if entry.hire_date is not None:
+            user.hire_date = entry.hire_date
+        if entry.termination_date is not None:
+            user.termination_date = entry.termination_date
 
         balance = db.scalar(
             select(LeaveBalance).where(LeaveBalance.user_id == user.id, LeaveBalance.year == year)

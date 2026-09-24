@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.leave_request import APPROVED, DRAFT, PENDING_APPROVAL, LeaveRequest
+from app.models.org_unit import OrgUnit
 from app.models.restriction_settings import DEPARTMENT_LOAD_THRESHOLDS
 from app.models.user import User
 from app.services import org_unit_service, permissions, restriction_settings_service
@@ -104,6 +105,22 @@ def get_org_leave_detail(
     )
     user_ids = {u.id for u in users}
 
+    # Руководитель юнита числится по head_user_id и не обязательно сам
+    # состоит в этом юните по org_unit_id (часто административно относится
+    # к вышестоящему подразделению) — без этого его отпуск нельзя было
+    # сопоставить с отпусками своей же команды на этом графике.
+    head_ids = set(
+        db.scalars(
+            select(OrgUnit.head_user_id).where(
+                OrgUnit.id.in_(descendant_ids), OrgUnit.head_user_id.isnot(None)
+            )
+        ).all()
+    ) - user_ids
+    if head_ids:
+        heads = list(db.scalars(select(User).where(User.id.in_(head_ids), User.is_active)).all())
+        users.extend(heads)
+        user_ids.update(u.id for u in heads)
+
     requests = (
         list(
             db.scalars(
@@ -119,8 +136,9 @@ def get_org_leave_detail(
         else []
     )
 
+    roles = permissions.resolve_roles_bulk(db, users)
     employees = [
-        {"id": u.id, "full_name": u.full_name, "role": permissions.resolve_role(db, u)}
+        {"id": u.id, "full_name": u.full_name, "role": roles[u.id]}
         for u in users
     ]
     leaves = [

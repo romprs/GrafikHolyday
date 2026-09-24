@@ -61,10 +61,26 @@ if [[ ! -x "$PYTHON_BIN" ]]; then
 fi
 
 echo "==> [2/7] Копирую исходники бэкенда и статику фронтенда"
-rsync -a --delete "$BUNDLE_DIR/app/" "$INSTALL_DIR/app/" 2>/dev/null || {
+# Защита от повторного запуска: даже если .env случайно попал в бандл (не
+# должен, build-bundle.* его теперь исключает) — снимаем копию уже
+# настроенного боевого .env ДО перезаписи и возвращаем её на место ПОСЛЕ,
+# чтобы копирование исходников ни при каких условиях не могло стереть
+# ранее сделанную настройку (БД, Kerberos, аварийный пароль) раньше, чем
+# сработает проверка "не трогать, если уже существует" в шаге [4/7] ниже.
+ENV_BACKUP=""
+if [[ -f "$INSTALL_DIR/app/backend/.env" ]]; then
+    ENV_BACKUP="$(mktemp)"
+    cp "$INSTALL_DIR/app/backend/.env" "$ENV_BACKUP"
+fi
+rsync -a --delete --exclude=.env "$BUNDLE_DIR/app/" "$INSTALL_DIR/app/" 2>/dev/null || {
     rm -rf "$INSTALL_DIR/app"
     cp -r "$BUNDLE_DIR/app" "$INSTALL_DIR/app"
 }
+if [[ -n "$ENV_BACKUP" ]]; then
+    mkdir -p "$INSTALL_DIR/app/backend"
+    cp "$ENV_BACKUP" "$INSTALL_DIR/app/backend/.env"
+    rm -f "$ENV_BACKUP"
+fi
 rsync -a --delete "$BUNDLE_DIR/frontend-dist/" "$INSTALL_DIR/frontend-dist/" 2>/dev/null || {
     rm -rf "$INSTALL_DIR/frontend-dist"
     cp -r "$BUNDLE_DIR/frontend-dist" "$INSTALL_DIR/frontend-dist"

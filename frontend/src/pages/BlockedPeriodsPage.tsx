@@ -48,13 +48,28 @@ export function BlockedPeriodsPage() {
   }, [blockedPeriods, planningYear]);
 
   const [yearFilter, setYearFilter] = useState<number | "">(planningYear);
+  const [scopeFilter, setScopeFilter] = useState<BlockedPeriodScope | "">("");
+  const [search, setSearch] = useState("");
 
   const filteredBlockedPeriods = useMemo(() => {
-    if (yearFilter === "") return blockedPeriods ?? [];
-    const yearStart = `${yearFilter}-01-01`;
-    const yearEnd = `${yearFilter}-12-31`;
-    return (blockedPeriods ?? []).filter((b) => b.date_from <= yearEnd && b.date_to >= yearStart);
-  }, [blockedPeriods, yearFilter]);
+    let list = blockedPeriods ?? [];
+    if (yearFilter !== "") {
+      const yearStart = `${yearFilter}-01-01`;
+      const yearEnd = `${yearFilter}-12-31`;
+      list = list.filter((b) => b.date_from <= yearEnd && b.date_to >= yearStart);
+    }
+    if (scopeFilter !== "") {
+      list = list.filter((b) => b.scope === scopeFilter);
+    }
+    const query = search.trim().toLowerCase();
+    if (query) {
+      list = list.filter((b) => {
+        const target = b.scope === "user" ? employeeName(b.user_id ?? "") : "";
+        return target.toLowerCase().includes(query) || b.reason.toLowerCase().includes(query);
+      });
+    }
+    return list;
+  }, [blockedPeriods, yearFilter, scopeFilter, search, employees]);
 
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -96,58 +111,33 @@ export function BlockedPeriodsPage() {
     <div>
       <h3>Недоступные периоды</h3>
 
-      <form onSubmit={handleCreate} style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 400 }}>
-        <label>
-          Дата начала
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            required
-            style={{ display: "block" }}
-          />
-        </label>
-        <label>
-          Дата окончания
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            required
-            style={{ display: "block" }}
-          />
-        </label>
-        <label>
-          Причина
-          <input
-            type="text"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            required
-            style={{ display: "block", width: "100%" }}
-          />
-        </label>
-        <label>
-          Область действия
-          <select
-            value={scope}
-            onChange={(e) => setScope(e.target.value as BlockedPeriodScope)}
-            style={{ display: "block" }}
-          >
+      <form onSubmit={handleCreate} className="panel" style={{ maxWidth: 420 }}>
+        <div className="fieldrow">
+          <div className="field" style={{ flex: 1 }}>
+            <label>Дата начала</label>
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} required />
+          </div>
+          <div className="field" style={{ flex: 1 }}>
+            <label>Дата окончания</label>
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} required />
+          </div>
+        </div>
+        <div className="field" style={{ marginBottom: 14 }}>
+          <label>Причина</label>
+          <input type="text" value={reason} onChange={(e) => setReason(e.target.value)} required />
+        </div>
+        <div className="field" style={{ marginBottom: 14 }}>
+          <label>Область действия</label>
+          <select value={scope} onChange={(e) => setScope(e.target.value as BlockedPeriodScope)}>
             <option value="org_unit">Подразделение</option>
             <option value="user">Сотрудник</option>
             <option value="global">Вся компания (HR/админ)</option>
           </select>
-        </label>
+        </div>
         {scope === "org_unit" && (
-          <label>
-            Подразделение
-            <select
-              value={orgUnitId}
-              onChange={(e) => setOrgUnitId(e.target.value)}
-              required
-              style={{ display: "block" }}
-            >
+          <div className="field" style={{ marginBottom: 14 }}>
+            <label>Подразделение</label>
+            <select value={orgUnitId} onChange={(e) => setOrgUnitId(e.target.value)} required>
               <option value="" disabled>
                 — выберите —
               </option>
@@ -157,17 +147,12 @@ export function BlockedPeriodsPage() {
                 </option>
               ))}
             </select>
-          </label>
+          </div>
         )}
         {scope === "user" && (
-          <label>
-            Сотрудник
-            <select
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              required
-              style={{ display: "block" }}
-            >
+          <div className="field" style={{ marginBottom: 14 }}>
+            <label>Сотрудник</label>
+            <select value={userId} onChange={(e) => setUserId(e.target.value)} required>
               <option value="" disabled>
                 — выберите —
               </option>
@@ -177,55 +162,80 @@ export function BlockedPeriodsPage() {
                 </option>
               ))}
             </select>
-          </label>
+          </div>
         )}
-        <button type="submit">Добавить блокировку</button>
-        {error && <p style={{ color: "crimson" }}>{error}</p>}
+        <button type="submit" className="btn-primary">
+          Добавить блокировку
+        </button>
+        {error && <p className="error-text">{error}</p>}
       </form>
 
-      <label style={{ display: "block", marginTop: 16 }}>
-        Плановый год:{" "}
-        <select
-          value={yearFilter}
-          onChange={(e) => setYearFilter(e.target.value === "" ? "" : Number(e.target.value))}
-        >
-          <option value="">Все года</option>
-          {availableYears.map((y) => (
-            <option key={y} value={y}>
-              {y}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="toolbar" style={{ marginTop: 20 }}>
+        <div className="field" style={{ width: 140 }}>
+          <label>Плановый год</label>
+          <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value === "" ? "" : Number(e.target.value))}>
+            <option value="">Все года</option>
+            {availableYears.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field" style={{ width: 180 }}>
+          <label>Область</label>
+          <select value={scopeFilter} onChange={(e) => setScopeFilter(e.target.value as BlockedPeriodScope | "")}>
+            <option value="">Все</option>
+            <option value="global">Вся компания</option>
+            <option value="org_unit">Подразделение</option>
+            <option value="user">Сотрудник</option>
+          </select>
+        </div>
+        <div className="field" style={{ flex: 1, minWidth: 200 }}>
+          <label>Поиск (сотрудник/причина)</label>
+          <input type="text" placeholder="напр. Иванов или Курс" value={search} onChange={(e) => setSearch(e.target.value)} />
+        </div>
+      </div>
 
-      <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 8 }}>
-        <thead>
-          <tr>
-            <th style={{ textAlign: "left" }}>Период</th>
-            <th style={{ textAlign: "left" }}>Причина</th>
-            <th style={{ textAlign: "left" }}>Область</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {filteredBlockedPeriods.map((b) => (
-            <tr key={b.id}>
-              <td>
-                {b.date_from} — {b.date_to}
-              </td>
-              <td>{b.reason}</td>
-              <td>
-                {b.scope === "global" && "Вся компания"}
-                {b.scope === "org_unit" && "Подразделение"}
-                {b.scope === "user" && `Сотрудник: ${employeeName(b.user_id ?? "")}`}
-              </td>
-              <td>
-                <button onClick={() => handleDelete(b.id)}>Удалить</button>
-              </td>
+      <div className="panel">
+        <table className="t">
+          <thead>
+            <tr>
+              <th>Период</th>
+              <th>Причина</th>
+              <th>Область</th>
+              <th />
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {filteredBlockedPeriods.map((b) => (
+              <tr key={b.id}>
+                <td>
+                  {b.date_from} — {b.date_to}
+                </td>
+                <td>{b.reason}</td>
+                <td>
+                  {b.scope === "global" && "Вся компания"}
+                  {b.scope === "org_unit" && "Подразделение"}
+                  {b.scope === "user" && `Сотрудник: ${employeeName(b.user_id ?? "")}`}
+                </td>
+                <td>
+                  <button className="btn-ghost" onClick={() => handleDelete(b.id)}>
+                    Удалить
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {filteredBlockedPeriods.length === 0 && (
+              <tr>
+                <td colSpan={4} className="empty">
+                  Ничего не найдено.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

@@ -17,6 +17,10 @@ export function listSyncRuns(): Promise<SyncRunOut[]> {
   return apiFetch<SyncRunOut[]>("/admin/sync/runs");
 }
 
+export function clearSyncRuns(): Promise<void> {
+  return apiFetch<void>("/admin/sync/runs", { method: "DELETE" });
+}
+
 export function importOrgDirectoryFile(input: {
   departments?: string;
   employees?: string;

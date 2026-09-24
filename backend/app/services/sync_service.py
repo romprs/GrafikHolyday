@@ -2,20 +2,44 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.integrations.org_directory import OrgDirectoryClient
 from app.models.external_id_mapping import ExternalIdMapping
 from app.models.org_unit import OrgUnit
+from app.models.restriction_settings import EXTERNAL_SOURCE_CONNECTION
 from app.models.sync import KIND_ORG_DIRECTORY, SyncChangeLog, SyncRun
 from app.models.user import User
+from app.services import restriction_settings_service
 from app.sync.dto import ExternalOrgUnitDTO, ExternalUserDTO
+from app.sync.fake_client import FakeDirectoryClient
 from app.sync.interface import ExternalDirectoryClient
 
 logger = logging.getLogger(__name__)
 
 ORG_UNIT = "org_unit"
 USER = "user"
+
+
+def build_client(db: Session) -> ExternalDirectoryClient:
+    """Реальный клиент — как только источник включён и указан URL; иначе
+    тестовая фикстура (FakeDirectoryClient), чтобы синк оставался доступен
+    для демо/локальной разработки без боевых реквизитов. Общая логика для
+    ручного запуска (admin_sync router) и планировщика (app/scheduler.py)."""
+    setting = restriction_settings_service.get(db, EXTERNAL_SOURCE_CONNECTION)
+    if setting is None or not setting.enabled:
+        return FakeDirectoryClient()
+    departments_url = setting.params.get("departments_url") or ""
+    if not departments_url:
+        return FakeDirectoryClient()
+    return OrgDirectoryClient(
+        departments_url=departments_url,
+        login=setting.params.get("auth_login") or "",
+        password=setting.params.get("auth_password") or "",
+        employees_url=setting.params.get("employees_url") or None,
+        verify_tls=bool(setting.params.get("verify_tls", False)),
+    )
 
 
 def _resolve_employee_code(
@@ -120,7 +144,11 @@ def run_sync(
         kind=KIND_ORG_DIRECTORY, trigger_type=trigger_type, triggered_by=triggered_by, status="running"
     )
     db.add(run)
-    db.flush()
+    # Коммитим отдельно от основной работы ниже — если синк упадёт и
+    # придётся делать db.rollback() (см. except), эта строка должна
+    # пережить откат, а не исчезнуть вместе с недописанными org_units/users.
+    db.commit()
+    db.refresh(run)
 
     summary = {
         "org_units": {"created": 0, "updated": 0, "unchanged": 0},
@@ -184,7 +212,13 @@ def run_sync(
                 existing.name = dto.name
                 existing.unit_kind = dto.unit_kind
                 existing.parent_id = parent_id
-                existing.is_active = True
+                # is_active — только ручное поле HR (см. org_unit_service.
+                # deactivate/update): источник вообще не отдаёт признак
+                # активности подразделения (ExternalOrgUnitDTO его не
+                # содержит), а синк раньше безусловно ставил True на КАЖДЫЙ
+                # прогон — молча отменяя деактивацию, сделанную HR вручную
+                # через админку. Синк больше не трогает is_active
+                # существующих подразделений вовсе.
         db.flush()
 
         # Pass 2: users — org_unit_id уже резолвим (org_units существуют).
@@ -192,6 +226,38 @@ def run_sync(
         for dto in user_dtos:
             internal_id = user_ids[dto.external_id]
             existing = db.get(User, internal_id)
+            if existing is None:
+                # Источник мог поменять внешний ID того же реального
+                # человека (переприсвоение табельного номера/логина,
+                # повторный найм и т.п.) — тогда для этого external_id
+                # выше выдан свежий internal_id, но email совпадёт со
+                # старым User под другим id, и слепой INSERT упадёт на
+                # уникальности email. Реконсилируем по email: если
+                # пользователь с таким email уже есть — это тот же
+                # человек, довязываем маппинг к его настоящему id вместо
+                # создания дубликата.
+                duplicate = db.scalar(select(User).where(User.email == dto.email))
+                if duplicate is not None:
+                    internal_id = duplicate.id
+                    user_ids[dto.external_id] = internal_id
+                    mapping_row = db.scalar(
+                        select(ExternalIdMapping).where(
+                            ExternalIdMapping.entity_type == USER,
+                            ExternalIdMapping.external_system == client.system_name,
+                            ExternalIdMapping.external_id == dto.external_id,
+                        )
+                    )
+                    if mapping_row is not None:
+                        mapping_row.internal_id = internal_id
+                    existing = duplicate
+                    logger.warning(
+                        "Синхронизация оргструктуры: сотрудник external_id=%s сопоставлен с уже "
+                        "существующим пользователем %s по email %s (источник, похоже, поменял "
+                        "внешний идентификатор для того же человека)",
+                        dto.external_id,
+                        internal_id,
+                        dto.email,
+                    )
             user_before[dto.external_id] = (
                 {
                     "email": existing.email,
@@ -226,7 +292,18 @@ def run_sync(
                 existing.org_unit_id = org_unit_id
                 if dto.has_benefits is not None:
                     existing.has_benefits = dto.has_benefits
-                existing.is_active = dto.is_active
+                # "Липкая" деактивация: если сотрудник уже неактивен (сам
+                # синк проставил при увольнении или HR отключил вручную),
+                # следующий прогон больше не включает его обратно только
+                # потому, что источник всё ещё отдаёт is_active=True (сам
+                # источник мог не успеть обновить статус, или HR отключил
+                # по локальной причине, не связанной с исходной системой).
+                # В обратную сторону — деактивация от источника (реальное
+                # увольнение) по-прежнему применяется сразу, раз человек
+                # ещё числится активным. Включить обратно можно только
+                # вручную через админку.
+                if existing.is_active:
+                    existing.is_active = dto.is_active
                 existing.employee_code = _resolve_employee_code(
                     db, dto.employee_code, existing.employee_code, internal_id
                 )
@@ -290,6 +367,14 @@ def run_sync(
             "Синхронизация оргструктуры: успешно завершена (run_id=%s), сводка: %s", run.id, summary
         )
     except Exception as exc:  # noqa: BLE001 — фиксируем любую ошибку синка в run, не роняем процесс
+        # Откатываем недописанную работу этой попытки ДО того, как что-то
+        # менять — иначе сессия остаётся в "rolled back" состоянии после
+        # сбоя flush() (например, IntegrityError), и попытка записать сюда
+        # же run.status="failed" и закоммитить только роняет тот же запрос
+        # второй раз с PendingRollbackError, а пользователь вместо чистого
+        # "ошибка" получает голый 500. Сама строка run пережила откат — она
+        # закоммичена отдельно в начале функции, до основной работы.
+        db.rollback()
         run.status = "failed"
         run.error_message = str(exc)
         logger.exception("Синхронизация оргструктуры завершилась ошибкой (run_id=%s)", run.id)
@@ -299,3 +384,18 @@ def run_sync(
     db.commit()
     db.refresh(run)
     return run
+
+
+def clear_history(db: Session, kind: str) -> int:
+    """Чистит историю прогонов синхронизации (SyncRun + связанный
+    SyncChangeLog) для одного вида интеграции — история за месяцы работы
+    захламляла список и не давала способа её почистить. Сам факт того, что
+    сотрудники/подразделения/недоступные периоды уже применены к текущим
+    данным, от удаления истории не зависит — это только журнал прогонов."""
+    run_ids = list(db.scalars(select(SyncRun.id).where(SyncRun.kind == kind)))
+    if not run_ids:
+        return 0
+    db.execute(delete(SyncChangeLog).where(SyncChangeLog.sync_run_id.in_(run_ids)))
+    deleted = db.execute(delete(SyncRun).where(SyncRun.id.in_(run_ids))).rowcount
+    db.commit()
+    return deleted

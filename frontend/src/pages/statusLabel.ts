@@ -11,3 +11,15 @@ const labels: Record<LeaveRequestStatus, string> = {
 export function statusLabel(status: LeaveRequestStatus): string {
   return labels[status] ?? status;
 }
+
+const badgeClasses: Record<LeaveRequestStatus, string> = {
+  draft: "neutral",
+  pending_approval: "wait",
+  approved: "ok",
+  rejected: "bad",
+  cancelled: "neutral",
+};
+
+export function statusBadgeClass(status: LeaveRequestStatus): string {
+  return badgeClasses[status] ?? "neutral";
+}

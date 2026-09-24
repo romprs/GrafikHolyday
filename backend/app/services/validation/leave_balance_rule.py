@@ -10,6 +10,7 @@ from app.models.restriction_settings import (
 from app.models.user import User
 from app.services import leave_balance_service, restriction_settings_service
 from app.services.validation.types import Violation
+from app.core.holidays import count_leave_days
 
 KEY = LEAVE_BALANCE_LIMIT
 EXEMPTABLE = True
@@ -24,7 +25,7 @@ def check(
 ) -> Violation | None:
     """Остаток считается по году даты начала отпуска — упрощение для случаев,
     когда период переходит через границу года (редкий случай для MVP)."""
-    requested_days = (date_to - date_from).days + 1
+    requested_days = count_leave_days(date_from, date_to)
     remaining = leave_balance_service.get_remaining_for_new_request(db, user, date_from.year)
 
     if requested_days > remaining:

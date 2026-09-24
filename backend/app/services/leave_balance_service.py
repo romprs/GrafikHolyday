@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.leave_balance import LeaveBalance
 from app.models.leave_request import APPROVED, DRAFT, PENDING_APPROVAL, LeaveRequest
 from app.models.user import User
+from app.core.holidays import count_leave_days
 
 
 def _days_in_year(request: LeaveRequest, year: int) -> int:
@@ -16,7 +17,7 @@ def _days_in_year(request: LeaveRequest, year: int) -> int:
     overlap_end = min(request.date_to, year_end)
     if overlap_start > overlap_end:
         return 0
-    return (overlap_end - overlap_start).days + 1
+    return count_leave_days(overlap_start, overlap_end)
 
 
 def get_summary(db: Session, user: User, year: int) -> dict:

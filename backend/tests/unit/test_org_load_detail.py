@@ -65,6 +65,32 @@ def test_leaves_outside_range_excluded(db_session, scenario):
     assert result["leaves"] == []
 
 
+def test_head_included_even_when_org_unit_id_points_elsewhere(db_session):
+    # Частая структура: руководитель административно числится в вышестоящем
+    # подразделении, а не в том, которым руководит через head_user_id —
+    # без явного учёта этого его отпуск нельзя сравнить с отпусками своей
+    # же команды на этом графике (см. get_org_leave_detail).
+    parent = OrgUnit(name="Дирекция", is_active=True)
+    db_session.add(parent)
+    db_session.flush()
+    dept = OrgUnit(name="Отдел", is_active=True, parent_id=parent.id)
+    db_session.add(dept)
+    db_session.flush()
+
+    head = User(email="head@detail.local", full_name="Анна Директорова", org_unit_id=parent.id)
+    employee = User(email="e2@detail.local", full_name="Пётр Работников", org_unit_id=dept.id)
+    db_session.add_all([head, employee])
+    db_session.flush()
+    dept.head_user_id = head.id
+    db_session.flush()
+
+    result = org_load_service.get_org_leave_detail(
+        db_session, dept.id, date(2026, 6, 1), date(2026, 6, 30)
+    )
+    names = {e["full_name"] for e in result["employees"]}
+    assert names == {"Анна Директорова", "Пётр Работников"}
+
+
 def test_leaves_include_draft_and_pending(db_session, scenario):
     db_session.add_all(
         [

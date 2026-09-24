@@ -17,8 +17,11 @@ import type {
 } from "../api/types";
 
 const statusLabel: Record<string, string> = {
+  draft: "черновик",
   pending_approval: "на согласовании",
   approved: "согласовано",
+  rejected: "отклонено",
+  cancelled: "отменено",
 };
 
 const bandColor: Record<LoadBand, string> = {
@@ -67,7 +70,8 @@ function toIso(year: number, monthIndex: number, day: number): string {
 
 export function OrgLoadDashboardPage() {
   const { currentUser } = useAuth();
-  const canApprove = currentUser?.role === "manager" || currentUser?.role === "hr_admin";
+  const canApprove =
+    currentUser?.role === "manager" || currentUser?.role === "hr_admin" || !!currentUser?.is_approver;
   const queryClient = useQueryClient();
   const { data: orgUnits } = useQuery({
     queryKey: ["org-units"],
@@ -77,6 +81,17 @@ export function OrgLoadDashboardPage() {
     queryKey: ["restriction-settings"],
     queryFn: getRestrictionSettings,
   });
+  // Руководитель не может согласовать сам себе (см. approval_service._is_manager_of) —
+  // единственное исключение бэкенда: сам возглавляет подразделение без родителя
+  // (замгендиректора и приравненные). Кнопку прячем заранее, а не показываем
+  // нерабочей — старая ошибка того же рода уже чинилась в очереди согласования
+  // (Phase 6.30), здесь она осталась на этом отдельном графике.
+  const selfApprovalExempt = useMemo(
+    () =>
+      !!currentUser &&
+      (orgUnits ?? []).some((u) => u.head_user_id === currentUser.id && u.parent_id === null),
+    [orgUnits, currentUser],
+  );
   // Деактивированные подразделения не выбираются на этом графике — как и
   // на дашборде загруженности, тут нет смысла смотреть отпуска расформированного отдела.
   const activeOrgUnits = useMemo(() => (orgUnits ?? []).filter((u) => u.is_active), [orgUnits]);
@@ -94,6 +109,11 @@ export function OrgLoadDashboardPage() {
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [clickedDay, setClickedDay] = useState<string | null>(null);
+  // Сотрудник, чьи периоды сейчас подсвечиваются на всём графике — отдельно
+  // от selectedIds (тот набор — для анализа пересечений загрузки, этот —
+  // просто "показать, когда этот человек в отпуске", по всему году сразу,
+  // без фильтров по роли/поиску/выбору.
+  const [focusedEmployeeId, setFocusedEmployeeId] = useState<string | null>(null);
 
   const thresholdsSetting = restrictionSettings?.find((s) => s.key === "department_load_thresholds");
   const yellowThreshold =
@@ -146,6 +166,22 @@ export function OrgLoadDashboardPage() {
     return leavesInScope.filter((l) => l.date_from <= dateIso && l.date_to >= dateIso);
   }
 
+  const focusedEmployee = focusedEmployeeId ? employeesById.get(focusedEmployeeId) : undefined;
+  // Из ВСЕХ отпусков подразделения (не только leavesInScope) — подсветка не
+  // должна зависеть от текущего фильтра по роли/поиску/ручному выбору.
+  const focusedLeaves = useMemo(
+    () => (focusedEmployeeId ? leaves.filter((l) => l.user_id === focusedEmployeeId) : []),
+    [leaves, focusedEmployeeId],
+  );
+
+  function isFocusedDay(dateIso: string): boolean {
+    return focusedLeaves.some((l) => l.date_from <= dateIso && l.date_to >= dateIso);
+  }
+
+  function toggleFocused(id: string) {
+    setFocusedEmployeeId((prev) => (prev === id ? null : id));
+  }
+
   function toggleSelected(id: string) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -157,110 +193,164 @@ export function OrgLoadDashboardPage() {
 
   // Один API-вызов — бэкенд согласует/отклоняет всю заявку (все периоды с
   // тем же submission_id) атомарно, group() тут больше не нужен.
-  async function handleApproveSubmission(leave: OrgLoadLeaveEntryOut) {
-    await approveLeaveRequest(leave.id);
-    queryClient.invalidateQueries({ queryKey: ["org-load-detail", unitId] });
+  // Раньше ошибка бэкенда (например, 403 «вы не руководитель отдела этого
+  // сотрудника» для HR-админа, не возглавляющего этот отдел) молча
+  // терялась — кнопка выглядела просто нерабочей.
+  async function reviewSubmission(action: typeof approveLeaveRequest, leave: OrgLoadLeaveEntryOut) {
+    try {
+      await action(leave.id);
+      queryClient.invalidateQueries({ queryKey: ["org-load-detail", unitId] });
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Не удалось выполнить действие");
+    }
   }
 
-  async function handleRejectSubmission(leave: OrgLoadLeaveEntryOut) {
-    await rejectLeaveRequest(leave.id);
-    queryClient.invalidateQueries({ queryKey: ["org-load-detail", unitId] });
-  }
+  const handleApproveSubmission = (leave: OrgLoadLeaveEntryOut) => reviewSubmission(approveLeaveRequest, leave);
+  const handleRejectSubmission = (leave: OrgLoadLeaveEntryOut) => reviewSubmission(rejectLeaveRequest, leave);
 
   const clickedDayLeaves = clickedDay ? leavesForDay(clickedDay) : [];
+  // Показываем сразу, без клика по дню — весь список несогласованных заявок
+  // в текущей области анализа. Группируем по submission_id: один человек —
+  // одна заявка (пусть даже из нескольких периодов), согласуется/отклоняется
+  // целиком одним действием — тот же принцип, что и в ApprovalQueuePage.
+  const pendingSubmissions = useMemo(() => {
+    const groups = new Map<string, OrgLoadLeaveEntryOut[]>();
+    for (const l of leavesInScope) {
+      if (l.status !== "pending_approval") continue;
+      const key = l.submission_id ?? l.id;
+      const list = groups.get(key) ?? [];
+      list.push(l);
+      groups.set(key, list);
+    }
+    return Array.from(groups.values())
+      .map((requests) => requests.sort((a, b) => a.date_from.localeCompare(b.date_from)))
+      .sort((a, b) => a[0].date_from.localeCompare(b[0].date_from));
+  }, [leavesInScope]);
 
   return (
     <div>
       <h3>Отпуска подразделений ({year} год)</h3>
-      <div>
-        <label>
-          Подразделение:{" "}
-          <select value={unitId} onChange={(e) => setSelectedUnitId(e.target.value)}>
-            {activeOrgUnits.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name} ({u.unit_kind})
-              </option>
-            ))}
-          </select>
-        </label>
+      <div className="panel field" style={{ maxWidth: 360, marginBottom: 12 }}>
+        <label>Подразделение</label>
+        <select value={unitId} onChange={(e) => setSelectedUnitId(e.target.value)}>
+          {activeOrgUnits.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.unit_kind ? `${u.name} (${u.unit_kind})` : u.name}
+            </option>
+          ))}
+        </select>
       </div>
 
-      <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap", marginTop: 12 }}>
-        <div style={{ flex: "0 0 300px", minWidth: 0 }}>
-          <label style={{ display: "block", marginBottom: 6 }}>
-            Роль:{" "}
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value as "all" | EmployeeRole)}
-            >
+      {/* Без переноса: при сужении окна календарь остаётся справа от
+          фильтра, а ряд прокручивается по горизонтали (раньше wrap
+          сбрасывал календарь под фильтр). */}
+      <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "nowrap", overflowX: "auto", marginTop: 12 }}>
+        <div className="panel" style={{ flex: "0 0 300px", minWidth: 0 }}>
+          <div className="field" style={{ marginBottom: 10 }}>
+            <label>Роль</label>
+            <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value as "all" | EmployeeRole)}>
               {(["all", "manager", "employee"] as const).map((r) => (
                 <option key={r} value={r}>
                   {roleFilterLabel[r]}
                 </option>
               ))}
             </select>
-          </label>
-          <label style={{ display: "block", marginBottom: 6 }}>
-            Поиск по фамилии:
+          </div>
+          <div className="field" style={{ marginBottom: 10 }}>
+            <label>Поиск по фамилии</label>
             <input
               type="text"
               placeholder="напр. Иванов"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              style={{ display: "block", width: "100%", boxSizing: "border-box" }}
+              style={{ width: "100%" }}
             />
-          </label>
+          </div>
 
           <div
             style={{
               maxHeight: 480,
               overflowY: "auto",
               overflowX: "hidden",
-              border: "1px solid #ddd",
+              border: "1px solid var(--line)",
+              borderRadius: 10,
               padding: 8,
             }}
           >
-            {searchFilteredEmployees.length === 0 && (
-              <p style={{ color: "#888", margin: 0 }}>Никого не найдено.</p>
-            )}
+            {searchFilteredEmployees.length === 0 && <p className="empty" style={{ margin: 0 }}>Никого не найдено.</p>}
             {searchFilteredEmployees.map((e) => (
-              <label
-                key={e.id}
-                title={e.full_name}
-                style={{ display: "flex", alignItems: "center", gap: 4 }}
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedIds.has(e.id)}
-                  onChange={() => toggleSelected(e.id)}
-                />
-                <span style={{ minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+              <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <input type="checkbox" checked={selectedIds.has(e.id)} onChange={() => toggleSelected(e.id)} />
+                <button
+                  type="button"
+                  onClick={() => toggleFocused(e.id)}
+                  title={`${e.full_name} — показать все периоды на графике`}
+                  style={{
+                    minWidth: 0,
+                    overflow: "hidden",
+                    whiteSpace: "nowrap",
+                    textOverflow: "ellipsis",
+                    background: "none",
+                    border: "none",
+                    padding: "4px 0",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    color: focusedEmployeeId === e.id ? "var(--accent-ink)" : "inherit",
+                    fontWeight: focusedEmployeeId === e.id ? 700 : 400,
+                  }}
+                >
                   {e.full_name}
-                </span>
-              </label>
+                </button>
+              </div>
             ))}
           </div>
           {selectedIds.size > 0 && (
-            <p style={{ fontSize: "0.85em", color: "#888" }}>
+            <p className="hint">
               Выбрано вручную: {selectedIds.size} — анализируются пересечения только между ними.{" "}
-              <button onClick={() => setSelectedIds(new Set())}>Сбросить выбор</button>
+              <button className="btn-ghost" style={{ padding: "2px 6px" }} onClick={() => setSelectedIds(new Set())}>
+                Сбросить выбор
+              </button>
             </p>
           )}
-          <p>
-            В анализе: <strong>{inScopeEmployees.length}</strong> чел.
+          {focusedEmployee && (
+            <p style={{ fontSize: "0.85em", color: "var(--accent-ink)" }}>
+              Показаны все периоды: <strong>{focusedEmployee.full_name}</strong> (обведены на графике).{" "}
+              <button className="btn-ghost" style={{ padding: "2px 6px" }} onClick={() => setFocusedEmployeeId(null)}>
+                Убрать подсветку
+              </button>
+            </p>
+          )}
+          <p className="hint" style={{ marginBottom: 0 }}>
+            В анализе: <strong style={{ color: "var(--ink)" }}>{inScopeEmployees.length}</strong> чел.
           </p>
         </div>
 
-      <div style={{ flex: "0 1 auto", minWidth: 0 }}>
+      {/* flex: "0 0 auto" + фиксированная ширина — раньше было "1 1 0px"
+          (тянуться на всё доступное место), из-за чего сама карточка вокруг
+          календаря сжималась и растягивалась вместе с окном браузера, хотя
+          колонки внутри таблицы уже были зафиксированы. Теперь ширина
+          карточки не зависит от окна вообще: у неё столько же места, сколько
+          нужно таблице (плюс паддинги .panel), не больше и не меньше. */}
+      <div className="panel" style={{ flex: "0 0 auto", width: 110 + 31 * 34 + 38 }}>
       <div style={{ overflowX: "auto" }}>
-        <table style={{ borderCollapse: "collapse", fontSize: 15 }}>
+        {/* Явная ширина = сумма колонок (110 + 31×34) — без неё браузер при
+            table-layout:fixed всё равно тянет таблицу по ширине родителя и
+            пропорционально растягивает/сжимает колонки при изменении
+            размера окна вместо того, чтобы просто скроллить контейнер. */}
+        <table style={{ borderCollapse: "collapse", fontSize: 15, tableLayout: "fixed", width: 110 + 31 * 34 }}>
+          <colgroup>
+            <col style={{ width: 110 }} />
+            {Array.from({ length: 31 }, (_, i) => (
+              <col key={i} style={{ width: 34 }} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
               <th style={{ textAlign: "left", padding: "3px 12px 3px 0", whiteSpace: "nowrap" }}>
                 Месяц
               </th>
               {Array.from({ length: 31 }, (_, i) => (
-                <th key={i} style={{ width: 34, fontWeight: 400 }}>
+                <th key={i} style={{ fontWeight: 400 }}>
                   {i + 1}
                 </th>
               ))}
@@ -287,11 +377,14 @@ export function OrgLoadDashboardPage() {
                     if (day > numDays) return <td key={day} />;
                     const dateIso = toIso(year, monthIndex, day);
                     const onLeave = employeesOnLeave(dateIso);
+                    const dayLeaves = leavesForDay(dateIso);
+                    const hasPending = dayLeaves.some((l) => l.status === "pending_approval");
                     const fraction = inScopeEmployees.length
                       ? onLeave.length / inScopeEmployees.length
                       : 0;
                     const empty = onLeave.length === 0;
                     const nonWorking = isNonWorkingDay(new Date(year, monthIndex, day));
+                    const focused = isFocusedDay(dateIso);
                     return (
                       <td key={day} style={{ padding: 2 }}>
                         <button
@@ -300,22 +393,25 @@ export function OrgLoadDashboardPage() {
                           title={
                             empty
                               ? undefined
-                              : `${dateIso}: ${onLeave.length} в отпуске — ${onLeave.map((e) => e.full_name).join(", ")}`
+                              : `${dateIso}: ${onLeave.length} в отпуске — ${onLeave.map((e) => e.full_name).join(", ")}` +
+                                (hasPending ? " (есть несогласованные)" : " (все согласованы)")
                           }
                           style={{
                             width: 32,
                             height: 32,
-                            border: "none",
-                            borderRadius: 4,
+                            border: hasPending ? "2px dashed var(--wait-fg)" : "2px solid transparent",
+                            borderRadius: 6,
+                            boxSizing: "border-box",
+                            boxShadow: focused ? "inset 0 0 0 2px var(--accent-ink)" : undefined,
                             cursor: empty ? "default" : "pointer",
                             background: empty
                               ? nonWorking
-                                ? "#ffe3e3"
-                                : "#f0f0f0"
+                                ? "var(--holiday-bg)"
+                                : "var(--empty-bg)"
                               : bandColor[band(fraction, yellowThreshold, redThreshold)],
-                            color: empty ? "#bbb" : "white",
+                            color: empty ? "var(--empty-fg)" : "white",
                             fontSize: 13,
-                            fontWeight: 600,
+                            fontWeight: 700,
                           }}
                         >
                           {empty ? "" : onLeave.length}
@@ -351,8 +447,8 @@ export function OrgLoadDashboardPage() {
               display: "inline-block",
               width: 12,
               height: 12,
-              background: "#f0f0f0",
-              borderRadius: 2,
+              background: "var(--empty-bg)",
+              borderRadius: 3,
             }}
           />
           нет отпусков (клик недоступен)
@@ -363,75 +459,160 @@ export function OrgLoadDashboardPage() {
               display: "inline-block",
               width: 12,
               height: 12,
-              background: "#ffe3e3",
-              borderRadius: 2,
+              background: "var(--holiday-bg)",
+              borderRadius: 3,
             }}
           />
           выходной/праздник
         </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span
+            style={{
+              display: "inline-block",
+              width: 12,
+              height: 12,
+              border: "2px dashed var(--wait-fg)",
+              boxSizing: "border-box",
+              borderRadius: 3,
+            }}
+          />
+          есть несогласованные заявки
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span
+            style={{
+              display: "inline-block",
+              width: 12,
+              height: 12,
+              boxShadow: "inset 0 0 0 2px var(--accent-ink)",
+              boxSizing: "border-box",
+              borderRadius: 3,
+            }}
+          />
+          дни выбранного сотрудника
+        </span>
       </div>
       </div>
 
-      {clickedDay && (
-        <div
-          style={{
-            flex: "0 0 260px",
-            border: "1px solid #ccc",
-            borderRadius: 6,
-            padding: 12,
-            maxHeight: "70vh",
-            overflowY: "auto",
-            position: "sticky",
-            top: 16,
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-            <strong>{format(parseISO(clickedDay), "dd.MM.yyyy")}</strong>
+      <div className="panel" style={{ flex: "0 0 260px", maxHeight: "70vh", overflowY: "auto", position: "sticky", top: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+          <strong>
+            {clickedDay
+              ? format(parseISO(clickedDay), "dd.MM.yyyy")
+              : `На согласовании (${pendingSubmissions.length})`}
+          </strong>
+          {clickedDay && (
             <button
               type="button"
               onClick={() => setClickedDay(null)}
-              title="Закрыть"
-              style={{
-                border: "none",
-                background: "none",
-                cursor: "pointer",
-                fontSize: 20,
-                lineHeight: 1,
-                padding: 0,
-                color: "#888",
-              }}
+              title="Вернуться к списку несогласованных"
+              className="btn-ghost"
+              style={{ fontSize: 18, lineHeight: 1, padding: "2px 6px" }}
             >
               ×
             </button>
-          </div>
+          )}
+        </div>
+        {clickedDay ? (
           <ul style={{ margin: "8px 0 0 0", paddingLeft: 20 }}>
             {clickedDayLeaves.map((l) => {
               const employee = employeesById.get(l.user_id);
               const fullName = employee?.full_name ?? "—";
+              const isSelf = l.user_id === currentUser?.id;
               return (
                 <li key={l.id} style={{ marginBottom: 6 }}>
-                  <div
-                    title={fullName}
-                    style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                  <button
+                    type="button"
+                    onClick={() => toggleFocused(l.user_id)}
+                    title={`${fullName} — показать все периоды на графике`}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      textAlign: "left",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      background: "none",
+                      border: "none",
+                      padding: 0,
+                      cursor: "pointer",
+                      color: focusedEmployeeId === l.user_id ? "var(--accent-ink)" : "inherit",
+                      fontWeight: focusedEmployeeId === l.user_id ? 700 : 400,
+                    }}
                   >
                     {fullName}
-                  </div>
-                  <span style={{ color: l.status === "approved" ? "#2e7d32" : "#a06a00" }}>
+                  </button>
+                  <span className={`badge ${l.status === "approved" ? "ok" : "wait"}`}>
                     {statusLabel[l.status] ?? l.status}
                   </span>
-                  {canApprove && l.status === "pending_approval" && (
-                    <div style={{ marginTop: 2 }}>
-                      <button onClick={() => handleApproveSubmission(l)}>Согласовать</button>{" "}
-                      <button onClick={() => handleRejectSubmission(l)}>Отклонить</button>
+                  {canApprove && l.status === "pending_approval" && (!isSelf || selfApprovalExempt) && (
+                    <div style={{ marginTop: 4 }}>
+                      <button className="btn-ghost" style={{ padding: "4px 8px" }} onClick={() => handleApproveSubmission(l)}>
+                        Согласовать
+                      </button>{" "}
+                      <button className="btn-ghost" style={{ padding: "4px 8px" }} onClick={() => handleRejectSubmission(l)}>
+                        Отклонить
+                      </button>
                     </div>
                   )}
                 </li>
               );
             })}
-            {clickedDayLeaves.length === 0 && <li>Никто не в отпуске</li>}
+            {clickedDayLeaves.length === 0 && <li className="empty">Никто не в отпуске</li>}
           </ul>
-        </div>
-      )}
+        ) : (
+          <ul style={{ margin: "8px 0 0 0", paddingLeft: 20 }}>
+            {pendingSubmissions.map((requests) => {
+              const first = requests[0];
+              const employee = employeesById.get(first.user_id);
+              const fullName = employee?.full_name ?? "—";
+              const isSelf = first.user_id === currentUser?.id;
+              return (
+                <li key={first.submission_id ?? first.id} style={{ marginBottom: 10 }}>
+                  <button
+                    type="button"
+                    onClick={() => toggleFocused(first.user_id)}
+                    title={`${fullName} — показать все периоды на графике`}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      textAlign: "left",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      background: "none",
+                      border: "none",
+                      padding: 0,
+                      cursor: "pointer",
+                      color: focusedEmployeeId === first.user_id ? "var(--accent-ink)" : "inherit",
+                      fontWeight: focusedEmployeeId === first.user_id ? 700 : 400,
+                    }}
+                  >
+                    {fullName}
+                  </button>
+                  {requests.map((r) => (
+                    <div key={r.id} className="hint">
+                      {format(parseISO(r.date_from), "dd.MM")}
+                      {r.date_from !== r.date_to ? `–${format(parseISO(r.date_to), "dd.MM.yyyy")}` : ""}
+                    </div>
+                  ))}
+                  {canApprove && (!isSelf || selfApprovalExempt) && (
+                    <div style={{ marginTop: 4 }}>
+                      <button className="btn-ghost" style={{ padding: "4px 8px" }} onClick={() => handleApproveSubmission(first)}>
+                        Согласовать
+                      </button>{" "}
+                      <button className="btn-ghost" style={{ padding: "4px 8px" }} onClick={() => handleRejectSubmission(first)}>
+                        Отклонить
+                      </button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+            {pendingSubmissions.length === 0 && <li className="empty">Все заявки согласованы</li>}
+          </ul>
+        )}
+      </div>
       </div>
     </div>
   );

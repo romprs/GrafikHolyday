@@ -52,24 +52,22 @@ def _check_can_manage(db: Session, actor: User, scope: str, org_unit_id, user_id
     if role != permissions.MANAGER:
         raise ForbiddenError("Недостаточно прав для управления недоступными периодами")
 
+    # Каскад по иерархии (как в approval_service/org_unit_service), а не
+    # только буквально свой юнит — иначе вышестоящий руководитель не мог
+    # управлять блокировками нижестоящих отделов, и на практике это могли
+    # делать только HR/админ, хотя UI показывал форму всем руководителям.
+    managed_unit_ids = set(org_unit_service.visible_unit_ids(db, actor) or [])
+
     if scope == GLOBAL:
         raise ForbiddenError("Глобальные блокировки может создавать только HR/админ")
     if scope == ORG_UNIT:
-        is_own_unit = db.scalar(
-            select(OrgUnit.id).where(OrgUnit.id == org_unit_id, OrgUnit.head_user_id == actor.id)
-        )
-        if not is_own_unit:
-            raise ForbiddenError("Можно управлять блокировками только своего отдела")
+        if org_unit_id not in managed_unit_ids:
+            raise ForbiddenError("Можно управлять блокировками только своего отдела и подчинённых ему")
     if scope == USER:
         target = db.get(User, user_id)
         if target is None or target.org_unit_id is None:
             raise ForbiddenError("Сотрудник не найден")
-        is_own_report = db.scalar(
-            select(OrgUnit.id).where(
-                OrgUnit.id == target.org_unit_id, OrgUnit.head_user_id == actor.id
-            )
-        )
-        if not is_own_report:
+        if target.org_unit_id not in managed_unit_ids:
             raise ForbiddenError("Можно управлять блокировками только своих сотрудников")
 
 

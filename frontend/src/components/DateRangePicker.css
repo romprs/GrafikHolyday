@@ -27,6 +27,33 @@
   font-weight: 600;
 }
 
-.year-grid-picker table {
-  width: 100%;
+/* Раньше тут было `table { width: 100% }`: при фиксированной ширине
+   ячеек (--rdp-day-width выше) это растягивало таблицу конфликтующим
+   образом — визуально ломало сетку (особенно заметно стало в тёмной
+   теме). Ширина месяца уже задана через .rdp-month flex-basis выше —
+   таблице растягиваться незачем. */
+
+/* Цвета статусов дня — через токены темы (были захардкожены светлой
+   палитрой, поэтому в тёмной теме календарь становился нечитаемым). */
+.year-grid-picker .rdp-day.day-nonworking { background-color: var(--holiday-bg); }
+.year-grid-picker .rdp-day.day-blocked { background-color: var(--cal-blocked-bg); color: var(--cal-blocked-fg); }
+.year-grid-picker .rdp-day.day-planned { background-color: var(--cal-planned-bg); color: var(--cal-planned-fg); font-weight: 600; }
+.year-grid-picker .rdp-day.day-preview {
+  background-color: color-mix(in srgb, var(--cal-planned-bg) 55%, var(--surface));
+  color: var(--cal-planned-fg);
+  box-shadow: inset 0 0 0 2px var(--accent);
+  font-weight: 600;
+}
+
+/* Недоступные (blocked) и уже запланированные (planned) дни также попадают
+   в общий список disabled (чтобы их нельзя было выбрать повторно), а
+   библиотека по умолчанию рисует все disabled-дни с opacity 0.5
+   (.rdp-disabled в style.css react-day-picker). Из-за этого их собственный
+   цвет практически терялся — недоступный период визуально не отличался от
+   обычного дня, и это выглядело так, будто блокировка "не отражается".
+   Для этих двух модификаторов приглушение отключаем: сама недоступность уже
+   ясна из невозможности клика и из цвета фона. */
+.year-grid-picker .rdp-disabled.day-blocked:not(.rdp-selected),
+.year-grid-picker .rdp-disabled.day-planned:not(.rdp-selected) {
+  opacity: 1;
 }

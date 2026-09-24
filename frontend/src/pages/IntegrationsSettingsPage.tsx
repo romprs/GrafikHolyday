@@ -1,16 +1,19 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
+  clearStudyPeriodsRuns,
+  clearVacationDaysRuns,
   importStudyPeriodsFile,
   listStudyPeriodsRuns,
   listVacationDaysRuns,
+  testStudyPeriodsConnection,
   triggerStudyPeriodsSync,
   triggerVacationDaysSync,
   updateRestrictionSetting,
 } from "../api/admin";
 import { getRestrictionSettings } from "../api/calendar";
 import { ApiError } from "../api/client";
-import type { SyncRunOut } from "../api/types";
+import type { StudyPeriodsTestResultOut, SyncRunOut } from "../api/types";
 
 export function IntegrationsSettingsPage() {
   const { data: settings } = useQuery({
@@ -19,18 +22,16 @@ export function IntegrationsSettingsPage() {
   });
 
   const externalSource = settings?.find((s) => s.key === "external_source_connection");
-  const auth = settings?.find((s) => s.key === "auth_configuration");
   const studyPeriods = settings?.find((s) => s.key === "study_periods_source");
   const vacationDays = settings?.find((s) => s.key === "vacation_days_source");
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 560 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 600 }}>
       <h3>Настройки интеграций</h3>
 
       {externalSource && <ExternalSourceForm key={externalSource.key} setting={externalSource} />}
       {vacationDays && <VacationDaysSourceForm key={vacationDays.key} setting={vacationDays} />}
       {studyPeriods && <StudyPeriodsSourceForm key={studyPeriods.key} setting={studyPeriods} />}
-      {auth && <AuthForm key={auth.key} setting={auth} />}
     </div>
   );
 }
@@ -64,10 +65,10 @@ function RunSummary({ run }: { run: SyncRunOut }) {
         </>
       )}
       {run.error_message && (
-        <div style={{ color: "crimson", whiteSpace: "pre-wrap" }}>{run.error_message}</div>
+        <div className="error-text" style={{ whiteSpace: "pre-wrap" }}>{run.error_message}</div>
       )}
       {!!s.errors?.length && (
-        <ul style={{ color: "crimson", margin: "2px 0 0 0", paddingLeft: 18 }}>
+        <ul className="error-text" style={{ margin: "2px 0 0 0", paddingLeft: 18 }}>
           {s.errors.slice(0, 5).map((e, i) => (
             <li key={i}>{e}</li>
           ))}
@@ -90,10 +91,18 @@ function StudyPeriodsSourceForm({
   const [authLogin, setAuthLogin] = useState((setting.params.auth_login as string) ?? "");
   const [authPassword, setAuthPassword] = useState((setting.params.auth_password as string) ?? "");
   const [verifyTls, setVerifyTls] = useState(Boolean(setting.params.verify_tls));
+  const [pollInterval, setPollInterval] = useState(
+    (setting.params.poll_interval_minutes as number) ?? 0,
+  );
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+
+  const [testCodes, setTestCodes] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [testError, setTestError] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<StudyPeriodsTestResultOut[] | null>(null);
 
   useEffect(() => {
     setEnabled(setting.enabled);
@@ -102,12 +111,45 @@ function StudyPeriodsSourceForm({
     setAuthLogin((setting.params.auth_login as string) ?? "");
     setAuthPassword((setting.params.auth_password as string) ?? "");
     setVerifyTls(Boolean(setting.params.verify_tls));
+    setPollInterval((setting.params.poll_interval_minutes as number) ?? 0);
   }, [setting]);
 
   const { data: runs } = useQuery({
     queryKey: ["study-periods-runs"],
     queryFn: listStudyPeriodsRuns,
   });
+
+  async function handleTestConnection() {
+    setTestError(null);
+    setTestResults(null);
+    const codes = testCodes
+      .split(/[,\s]+/)
+      .map((c) => c.trim())
+      .filter(Boolean);
+    if (codes.length === 0) {
+      setTestError("Укажите хотя бы один табельный номер");
+      return;
+    }
+    if (codes.length > 5) {
+      setTestError("Не больше 5 табельных номеров за один тест");
+      return;
+    }
+    setTesting(true);
+    try {
+      const results = await testStudyPeriodsConnection({
+        base_url: baseUrl,
+        auth_login: authLogin,
+        auth_password: authPassword,
+        verify_tls: verifyTls,
+        employee_codes: codes,
+      });
+      setTestResults(results);
+    } catch (err) {
+      setTestError(err instanceof ApiError ? err.message : "Не удалось проверить подключение");
+    } finally {
+      setTesting(false);
+    }
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -120,6 +162,7 @@ function StudyPeriodsSourceForm({
           base_url: baseUrl,
           auth_login: authLogin,
           auth_password: authPassword,
+          poll_interval_minutes: pollInterval,
           verify_tls: verifyTls,
         },
       });
@@ -144,6 +187,14 @@ function StudyPeriodsSourceForm({
     }
   }
 
+  async function handleClearHistory() {
+    if (!window.confirm("Удалить всю историю прогонов синхронизации учебных планов? Действие необратимо.")) {
+      return;
+    }
+    await clearStudyPeriodsRuns();
+    queryClient.invalidateQueries({ queryKey: ["study-periods-runs"] });
+  }
+
   async function handleFileImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -165,9 +216,9 @@ function StudyPeriodsSourceForm({
   }
 
   return (
-    <section style={{ border: "1px solid #ddd", borderRadius: 6, padding: 16 }}>
-      <h4 style={{ marginTop: 0 }}>Источник учебных планов (недоступные периоды)</h4>
-      <p style={{ fontSize: "0.85em", color: "#888" }}>
+    <section className="panel">
+      <h4>Источник учебных планов (недоступные периоды)</h4>
+      <p className="hint">
         Недоступные периоды сотрудников (обучение и т.п.) сопоставляются по табельному номеру
         (задаётся на странице «Сотрудники»). Два режима: загрузка JSON-файла вручную — доступно уже
         сейчас — или синхронизация напрямую из источника по HTTP, когда будет согласован боевой
@@ -223,18 +274,99 @@ function StudyPeriodsSourceForm({
             />{" "}
             Проверять TLS-сертификат
           </label>
+          <label style={{ display: "block", marginBottom: 8 }}>
+            Интервал автозапуска, мин. (0 — не запускать по расписанию, только вручную)
+            <input
+              type="number"
+              min={0}
+              value={pollInterval}
+              onChange={(e) => setPollInterval(Number(e.target.value))}
+              style={{ display: "block", width: 120 }}
+            />
+          </label>
+
+          <div className="panel" style={{ background: "var(--tint)" }}>
+            <h5 style={{ margin: "0 0 6px 0" }}>Тестовое подключение</h5>
+            <p className="hint" style={{ margin: "0 0 8px 0" }}>
+              Проверка на 1–5 табельных номерах без записи в БД — берёт реквизиты прямо отсюда
+              (не обязательно уже сохранённые), показывает реальный сформированный запрос и сырой
+              ответ источника на каждый номер.
+            </p>
+            <input
+              type="text"
+              placeholder="Табельные номера через запятую или пробел, напр. 3168, 4122"
+              value={testCodes}
+              onChange={(e) => setTestCodes(e.target.value)}
+              style={{ width: "100%", boxSizing: "border-box", marginBottom: 6 }}
+            />
+            <button type="button" className="btn-outline" onClick={handleTestConnection} disabled={testing || !baseUrl.trim()}>
+              {testing ? "Проверяю…" : "Проверить"}
+            </button>
+            {testError && <p className="error-text" style={{ fontSize: "0.85em" }}>{testError}</p>}
+            {testResults && (
+              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+                {testResults.map((r) => (
+                  <div
+                    key={r.employee_code}
+                    style={{
+                      border: `1px solid ${r.error ? "var(--bad-fg)" : "var(--ok-fg)"}`,
+                      borderRadius: 8,
+                      padding: 8,
+                      background: "var(--surface)",
+                      fontSize: "0.85em",
+                    }}
+                  >
+                    <div style={{ fontWeight: 700 }}>
+                      Табельный номер {r.employee_code}
+                      {r.http_status !== null && ` — HTTP ${r.http_status}`}
+                    </div>
+                    <div style={{ wordBreak: "break-all", color: "var(--ink-soft)", margin: "4px 0" }}>
+                      <span className="hint">Запрос: </span>
+                      {r.request_url}
+                    </div>
+                    {r.error ? (
+                      <div className="error-text">{r.error}</div>
+                    ) : (
+                      <div style={{ color: "var(--ok-fg)" }}>
+                        Разобрано записей: {r.parsed_entries_count}
+                      </div>
+                    )}
+                    {r.response_body_preview && (
+                      <details style={{ marginTop: 4 }}>
+                        <summary className="hint" style={{ cursor: "pointer" }}>Тело ответа</summary>
+                        <pre
+                          style={{
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-all",
+                            background: "var(--tint)",
+                            padding: 6,
+                            borderRadius: 6,
+                            margin: "4px 0 0 0",
+                            maxHeight: 200,
+                            overflow: "auto",
+                          }}
+                        >
+                          {r.response_body_preview}
+                        </pre>
+                      </details>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </>
       )}
 
-      <button onClick={handleSave} disabled={saving}>
+      <button className="btn-primary" onClick={handleSave} disabled={saving}>
         Сохранить
       </button>
-      {saved && <span style={{ marginLeft: 8, color: "green" }}>Сохранено</span>}
+      {saved && <span style={{ marginLeft: 8, color: "var(--ok-fg)" }}>Сохранено</span>}
 
-      <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #eee" }}>
+      <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
         {mode === "http" ? (
-          <button onClick={handleRunHttp} disabled={running || !enabled}>
-            Синхронизировать сейчас
+          <button className="btn-outline" onClick={handleRunHttp} disabled={running || !enabled}>
+            {running ? "Выполняется…" : "Синхронизировать сейчас"}
           </button>
         ) : (
           <label>
@@ -242,15 +374,22 @@ function StudyPeriodsSourceForm({
             <input type="file" accept=".json,application/json" onChange={handleFileImport} disabled={running} />
           </label>
         )}
-        {runError && <p style={{ color: "crimson" }}>{runError}</p>}
+        {runError && <p className="error-text">{runError}</p>}
         {runs && runs.length > 0 && (
-          <ul style={{ fontSize: "0.85em", marginTop: 8, paddingLeft: 20 }}>
-            {runs.slice(0, 5).map((r) => (
-              <li key={r.id}>
-                <RunSummary run={r} />
-              </li>
-            ))}
-          </ul>
+          <>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+              <button className="btn-ghost" onClick={handleClearHistory} style={{ fontSize: "0.8em" }}>
+                Очистить историю
+              </button>
+            </div>
+            <ul style={{ fontSize: "0.85em", marginTop: 4, paddingLeft: 20 }}>
+              {runs.slice(0, 5).map((r) => (
+                <li key={r.id}>
+                  <RunSummary run={r} />
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </div>
     </section>
@@ -312,9 +451,9 @@ function ExternalSourceForm({
   }
 
   return (
-    <section style={{ border: "1px solid #ddd", borderRadius: 6, padding: 16 }}>
-      <h4 style={{ marginTop: 0 }}>Внешний источник оргструктуры</h4>
-      <p style={{ fontSize: "0.85em", color: "#888" }}>
+    <section className="panel">
+      <h4>Внешний источник оргструктуры</h4>
+      <p className="hint">
         Отделы и иерархия — из GetDepartments(), сотрудники — из GetEmployeers() (оба под одной
         Basic-авторизацией). Сопоставление сотрудников с подразделением и заполнение табельного
         номера — автоматически при синхронизации. Запуск синхронизации, загрузка из файла (если
@@ -378,10 +517,10 @@ function ExternalSourceForm({
           style={{ display: "block", width: 120 }}
         />
       </label>
-      <button onClick={handleSave} disabled={saving}>
+      <button className="btn-primary" onClick={handleSave} disabled={saving}>
         Сохранить
       </button>
-      {saved && <span style={{ marginLeft: 8, color: "green" }}>Сохранено</span>}
+      {saved && <span style={{ marginLeft: 8, color: "var(--ok-fg)" }}>Сохранено</span>}
     </section>
   );
 }
@@ -397,6 +536,9 @@ function VacationDaysSourceForm({
   const [authLogin, setAuthLogin] = useState((setting.params.auth_login as string) ?? "");
   const [authPassword, setAuthPassword] = useState((setting.params.auth_password as string) ?? "");
   const [verifyTls, setVerifyTls] = useState(Boolean(setting.params.verify_tls));
+  const [pollInterval, setPollInterval] = useState(
+    (setting.params.poll_interval_minutes as number) ?? 0,
+  );
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
@@ -408,6 +550,7 @@ function VacationDaysSourceForm({
     setAuthLogin((setting.params.auth_login as string) ?? "");
     setAuthPassword((setting.params.auth_password as string) ?? "");
     setVerifyTls(Boolean(setting.params.verify_tls));
+    setPollInterval((setting.params.poll_interval_minutes as number) ?? 0);
   }, [setting]);
 
   const { data: runs } = useQuery({
@@ -426,6 +569,7 @@ function VacationDaysSourceForm({
           auth_login: authLogin,
           auth_password: authPassword,
           verify_tls: verifyTls,
+          poll_interval_minutes: pollInterval,
         },
       });
       queryClient.invalidateQueries({ queryKey: ["restriction-settings"] });
@@ -450,10 +594,18 @@ function VacationDaysSourceForm({
     }
   }
 
+  async function handleClearHistory() {
+    if (!window.confirm("Удалить всю историю прогонов синхронизации дней отпуска? Действие необратимо.")) {
+      return;
+    }
+    await clearVacationDaysRuns();
+    queryClient.invalidateQueries({ queryKey: ["vacation-days-runs"] });
+  }
+
   return (
-    <section style={{ border: "1px solid #ddd", borderRadius: 6, padding: 16 }}>
-      <h4 style={{ marginTop: 0 }}>Источник дней отпуска и льгот</h4>
-      <p style={{ fontSize: "0.85em", color: "#888" }}>
+    <section className="panel">
+      <h4>Источник дней отпуска и льгот</h4>
+      <p className="hint">
         Остаток дней отпуска на плановый год и признак льготника — отдельная система от
         оргструктуры/сотрудников, запрашивается по одному табельному номеру за раз (может быть
         медленно на большом штате). Сопоставление — по табельному номеру.
@@ -494,137 +646,51 @@ function VacationDaysSourceForm({
         <input type="checkbox" checked={verifyTls} onChange={(e) => setVerifyTls(e.target.checked)} />{" "}
         Проверять TLS-сертификат
       </label>
+      <label style={{ display: "block", marginBottom: 8 }}>
+        Интервал автозапуска, мин. (0 — не запускать по расписанию, только вручную)
+        <input
+          type="number"
+          min={0}
+          value={pollInterval}
+          onChange={(e) => setPollInterval(Number(e.target.value))}
+          style={{ display: "block", width: 120 }}
+        />
+      </label>
 
-      <button onClick={handleSave} disabled={saving}>
+      <button className="btn-primary" onClick={handleSave} disabled={saving}>
         Сохранить
       </button>
-      {saved && <span style={{ marginLeft: 8, color: "green" }}>Сохранено</span>}
+      {saved && <span style={{ marginLeft: 8, color: "var(--ok-fg)" }}>Сохранено</span>}
 
-      <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #eee" }}>
-        <button onClick={handleRun} disabled={running || !enabled}>
-          Синхронизировать сейчас
+      <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
+        <button className="btn-outline" onClick={handleRun} disabled={running || !enabled}>
+          {running ? "Выполняется…" : "Синхронизировать сейчас"}
         </button>
-        {runError && <p style={{ color: "crimson" }}>{runError}</p>}
+        {running && (
+          <p className="hint" style={{ marginTop: 6 }}>
+            Запрос идёт по одному сотруднику за раз — на большом штате может занять несколько
+            минут, не закрывайте страницу.
+          </p>
+        )}
+        {runError && <p className="error-text">{runError}</p>}
         {runs && runs.length > 0 && (
-          <ul style={{ fontSize: "0.85em", marginTop: 8, paddingLeft: 20 }}>
-            {runs.slice(0, 5).map((r) => (
-              <li key={r.id}>
-                <RunSummary run={r} />
-              </li>
-            ))}
-          </ul>
+          <>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+              <button className="btn-ghost" onClick={handleClearHistory} style={{ fontSize: "0.8em" }}>
+                Очистить историю
+              </button>
+            </div>
+            <ul style={{ fontSize: "0.85em", marginTop: 4, paddingLeft: 20 }}>
+              {runs.slice(0, 5).map((r) => (
+                <li key={r.id}>
+                  <RunSummary run={r} />
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </div>
     </section>
   );
 }
 
-function AuthForm({ setting }: { setting: { enabled: boolean; params: Record<string, unknown> } }) {
-  const queryClient = useQueryClient();
-  const [enabled, setEnabled] = useState(setting.enabled);
-  const [mode, setMode] = useState((setting.params.mode as string) ?? "dev");
-  const [issuer, setIssuer] = useState((setting.params.oidc_issuer as string) ?? "");
-  const [clientId, setClientId] = useState((setting.params.oidc_client_id as string) ?? "");
-  const [clientSecret, setClientSecret] = useState(
-    (setting.params.oidc_client_secret as string) ?? "",
-  );
-  const [redirectUri, setRedirectUri] = useState(
-    (setting.params.oidc_redirect_uri as string) ?? "",
-  );
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    setEnabled(setting.enabled);
-    setMode((setting.params.mode as string) ?? "dev");
-    setIssuer((setting.params.oidc_issuer as string) ?? "");
-    setClientId((setting.params.oidc_client_id as string) ?? "");
-    setClientSecret((setting.params.oidc_client_secret as string) ?? "");
-    setRedirectUri((setting.params.oidc_redirect_uri as string) ?? "");
-  }, [setting]);
-
-  async function handleSave() {
-    setSaving(true);
-    setSaved(false);
-    try {
-      await updateRestrictionSetting("auth_configuration", {
-        enabled,
-        params: {
-          mode,
-          oidc_issuer: issuer,
-          oidc_client_id: clientId,
-          oidc_client_secret: clientSecret,
-          oidc_redirect_uri: redirectUri,
-        },
-      });
-      queryClient.invalidateQueries({ queryKey: ["restriction-settings"] });
-      setSaved(true);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <section style={{ border: "1px solid #ddd", borderRadius: 6, padding: 16 }}>
-      <h4 style={{ marginTop: 0 }}>Авторизация</h4>
-      <p style={{ fontSize: "0.85em", color: "#888" }}>
-        Параметры для перехода с dev-входа (выбор тестового пользователя) на реальный SSO/OIDC.
-        Сохранение значений здесь фиксирует конфигурацию; сам вход через OIDC — следующий шаг,
-        требующий отдельного включения на бэкенде.
-      </p>
-      <label style={{ display: "block", marginBottom: 8 }}>
-        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />{" "}
-        Конфигурация активна
-      </label>
-      <label style={{ display: "block", marginBottom: 8 }}>
-        Режим входа
-        <select value={mode} onChange={(e) => setMode(e.target.value)} style={{ display: "block" }}>
-          <option value="dev">dev (выбор тестового пользователя)</option>
-          <option value="oidc">oidc (корпоративный SSO)</option>
-        </select>
-      </label>
-      <label style={{ display: "block", marginBottom: 8 }}>
-        OIDC Issuer URL
-        <input
-          type="text"
-          value={issuer}
-          onChange={(e) => setIssuer(e.target.value)}
-          placeholder="https://sso.example.com/realms/company"
-          style={{ display: "block", width: "100%" }}
-        />
-      </label>
-      <label style={{ display: "block", marginBottom: 8 }}>
-        Client ID
-        <input
-          type="text"
-          value={clientId}
-          onChange={(e) => setClientId(e.target.value)}
-          style={{ display: "block", width: "100%" }}
-        />
-      </label>
-      <label style={{ display: "block", marginBottom: 8 }}>
-        Client Secret
-        <input
-          type="password"
-          value={clientSecret}
-          onChange={(e) => setClientSecret(e.target.value)}
-          style={{ display: "block", width: "100%" }}
-        />
-      </label>
-      <label style={{ display: "block", marginBottom: 8 }}>
-        Redirect URI
-        <input
-          type="text"
-          value={redirectUri}
-          onChange={(e) => setRedirectUri(e.target.value)}
-          placeholder="https://vacation.example.com/auth/callback"
-          style={{ display: "block", width: "100%" }}
-        />
-      </label>
-      <button onClick={handleSave} disabled={saving}>
-        Сохранить
-      </button>
-      {saved && <span style={{ marginLeft: 8, color: "green" }}>Сохранено</span>}
-    </section>
-  );
-}

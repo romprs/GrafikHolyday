@@ -29,55 +29,44 @@ export function DevLoginPage() {
   }
 
   return (
-    <div style={{ maxWidth: 480, margin: "4rem auto", fontFamily: "sans-serif" }}>
-      <h1>Планирование отпусков</h1>
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div className="panel" style={{ width: "100%", maxWidth: 400 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18 }}>
+          <span style={{ width: 9, height: 9, borderRadius: "50%", background: "var(--accent)" }} />
+          <h3 style={{ margin: 0 }}>Планирование отпусков</h3>
+        </div>
 
-      {devUsers.length > 0 && (
-        <>
-          <p>Dev-режим входа — выберите тестового пользователя:</p>
-          <ul style={{ listStyle: "none", padding: 0 }}>
-            {devUsers.map((u) => (
-              <li key={u.id} style={{ marginBottom: 8 }}>
+        {devUsers.length > 0 && (
+          <>
+            <p className="hint" style={{ marginBottom: 10 }}>Dev-режим входа — выберите тестового пользователя:</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
+              {devUsers.map((u) => (
                 <button
+                  key={u.id}
+                  type="button"
+                  className="btn-outline"
                   onClick={() => loginAs(u.id)}
-                  style={{ width: "100%", textAlign: "left", padding: "8px 12px" }}
+                  style={{ textAlign: "left" }}
                 >
                   {u.full_name} — {u.email}
                 </button>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+              ))}
+            </div>
+          </>
+        )}
 
-      <details open={devUsers.length === 0} style={{ marginTop: devUsers.length > 0 ? 24 : 0 }}>
-        <summary style={{ cursor: "pointer", color: "#888" }}>Аварийный вход HR-admin</summary>
-        <form
-          onSubmit={handleFallbackSubmit}
-          style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8, maxWidth: 300 }}
-        >
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-          <input
-            type="password"
-            placeholder="Пароль"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-          <button type="submit" disabled={submitting}>
-            Войти
-          </button>
-          {error && (
-            <p style={{ color: "crimson", margin: 0 }}>{error}</p>
-          )}
-        </form>
-      </details>
+        <details open={devUsers.length === 0}>
+          <summary style={{ cursor: "pointer", color: "var(--ink-mute)", fontSize: 13.5 }}>Аварийный вход HR-admin</summary>
+          <form onSubmit={handleFallbackSubmit} style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+            <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <input type="password" placeholder="Пароль" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <button type="submit" className="btn-primary" disabled={submitting}>
+              Войти
+            </button>
+            {error && <p className="error-text" style={{ margin: 0 }}>{error}</p>}
+          </form>
+        </details>
+      </div>
     </div>
   );
 }

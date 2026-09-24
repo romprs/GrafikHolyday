@@ -71,68 +71,74 @@ export function ApprovalQueuePage() {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div>
-        <h3>Заявки на согласование</h3>
-        {pendingSubmissions.length === 0 && <p>Нет заявок, ожидающих согласования.</p>}
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
-          <tbody>
-            {pendingSubmissions.map((s) => (
-              <tr key={s.key}>
-                <td style={{ verticalAlign: "top", padding: "8px 8px 8px 0", fontWeight: 600 }}>
-                  {s.employeeName}
-                </td>
-                <td style={{ verticalAlign: "top", padding: "8px 8px 8px 0" }}>
-                  {s.requests.map((r) => (
-                    <div key={r.id}>
-                      {r.date_from} — {r.date_to} ({r.days} дн.)
-                      {r.bonus_requested && " 🎁 доплата"}
-                    </div>
-                  ))}
-                  {s.requests.length > 1 && (
-                    <div style={{ color: "#888", fontSize: "0.85em" }}>
-                      Итого {s.requests.length} период(а/ов), {s.totalDays} дн.
-                    </div>
-                  )}
-                </td>
-                <td style={{ verticalAlign: "top" }}>
-                  <button onClick={() => handleApprove(s)}>Согласовать</button>{" "}
-                  <button onClick={() => handleReject(s)}>Отклонить</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div>
+      <h3>Заявки на согласование</h3>
+      <div className="panel">
+        {pendingSubmissions.length === 0 && <p className="empty">Нет заявок, ожидающих согласования.</p>}
+        {pendingSubmissions.length > 0 && (
+          <table className="t">
+            <tbody>
+              {pendingSubmissions.map((s) => (
+                <tr key={s.key}>
+                  <td style={{ fontWeight: 700 }}>{s.employeeName}</td>
+                  <td>
+                    {s.requests.map((r) => (
+                      <div key={r.id}>
+                        {r.date_from} — {r.date_to} ({r.days} дн.)
+                        {r.bonus_requested && " 🎁 выплата ЕСВ"}
+                      </div>
+                    ))}
+                    {s.requests.length > 1 && (
+                      <div className="hint">
+                        Итого {s.requests.length} период(а/ов), {s.totalDays} дн.
+                      </div>
+                    )}
+                  </td>
+                  <td>
+                    <button className="btn-ghost" onClick={() => handleReject(s)}>
+                      Отклонить
+                    </button>{" "}
+                    <button className="btn-primary" onClick={() => handleApprove(s)}>
+                      Согласовать
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
-      <div>
-        <h3>Согласованные заявки моих сотрудников</h3>
-        <p style={{ color: "#888", fontSize: "0.85em" }}>
-          Сотрудник сам отменить уже согласованную заявку не может — только руководитель.
-        </p>
-        {approvedSubmissions.length === 0 && <p>Нет согласованных заявок.</p>}
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
-          <tbody>
-            {approvedSubmissions.map((s) => (
-              <tr key={s.key}>
-                <td style={{ verticalAlign: "top", padding: "8px 8px 8px 0", fontWeight: 600 }}>
-                  {s.employeeName}
-                </td>
-                <td style={{ verticalAlign: "top", padding: "8px 8px 8px 0" }}>
-                  {s.requests.map((r) => (
-                    <div key={r.id}>
-                      {r.date_from} — {r.date_to} ({r.days} дн.)
-                      {r.bonus_requested && " 🎁 доплата"}
-                    </div>
-                  ))}
-                </td>
-                <td style={{ verticalAlign: "top" }}>
-                  <button onClick={() => handleManagerCancel(s)}>Отменить</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <h3>Согласованные заявки моих сотрудников</h3>
+      <p className="hint" style={{ marginBottom: 10 }}>
+        Сотрудник сам отменить уже согласованную заявку не может — только руководитель.
+      </p>
+      <div className="panel">
+        {approvedSubmissions.length === 0 && <p className="empty">Нет согласованных заявок.</p>}
+        {approvedSubmissions.length > 0 && (
+          <table className="t">
+            <tbody>
+              {approvedSubmissions.map((s) => (
+                <tr key={s.key}>
+                  <td style={{ fontWeight: 700 }}>{s.employeeName}</td>
+                  <td>
+                    {s.requests.map((r) => (
+                      <div key={r.id}>
+                        {r.date_from} — {r.date_to} ({r.days} дн.)
+                        {r.bonus_requested && " 🎁 выплата ЕСВ"}
+                      </div>
+                    ))}
+                  </td>
+                  <td>
+                    <button className="btn-ghost" onClick={() => handleManagerCancel(s)}>
+                      Отменить
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

@@ -48,6 +48,22 @@ def _validate_kerberos_config() -> None:
 
         get_gssapi_provider()
 
+
+@app.on_event("startup")
+def _start_sync_scheduler() -> None:
+    if settings.enable_sync_scheduler:
+        from app import scheduler
+
+        scheduler.start()
+
+
+@app.on_event("shutdown")
+def _stop_sync_scheduler() -> None:
+    from app import scheduler
+
+    scheduler.stop()
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,

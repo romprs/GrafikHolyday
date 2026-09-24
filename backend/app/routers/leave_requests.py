@@ -6,8 +6,10 @@ from sqlalchemy import select
 
 from app.dependencies import CurrentUser, DbSession, require_role
 from app.models.leave_request import LeaveRequest
+from app.models.org_unit import OrgUnit
 from app.models.user import User
 from app.schemas.leave_request import (
+    LeaveRequestAdminOut,
     LeaveRequestAdminOverride,
     LeaveRequestBonusUpdate,
     LeaveRequestCreate,
@@ -86,9 +88,33 @@ def list_my_leave_requests(
     return leave_request_service.list_own(db, user, on_behalf_of)
 
 
-@router.get("/all", response_model=list[LeaveRequestOut])
-def list_all_leave_requests(db: DbSession, _: HrAdmin) -> list[LeaveRequestOut]:
-    return approval_service.list_all(db)
+def _with_employee_and_org(db: DbSession, requests: list[LeaveRequest]) -> list[LeaveRequestAdminOut]:
+    """Для страницы «Все заявки» (HR) — ФИО и подразделение сотрудника,
+    иначе список из одних дат/статусов не даёт понять, чья заявка и откуда
+    (см. также _with_employee_names — та же идея, но без подразделения)."""
+    user_ids = {r.user_id for r in requests}
+    users = {u.id: u for u in db.scalars(select(User).where(User.id.in_(user_ids)))}
+    org_unit_ids = {u.org_unit_id for u in users.values() if u.org_unit_id}
+    org_unit_names = {
+        ou.id: ou.name for ou in db.scalars(select(OrgUnit).where(OrgUnit.id.in_(org_unit_ids)))
+    }
+    result = []
+    for r in requests:
+        user = users.get(r.user_id)
+        result.append(
+            LeaveRequestAdminOut(
+                **LeaveRequestOut.model_validate(r).model_dump(),
+                user_full_name=user.full_name if user else "—",
+                org_unit_id=user.org_unit_id if user else None,
+                org_unit_name=org_unit_names.get(user.org_unit_id) if user and user.org_unit_id else None,
+            )
+        )
+    return result
+
+
+@router.get("/all", response_model=list[LeaveRequestAdminOut])
+def list_all_leave_requests(db: DbSession, _: HrAdmin) -> list[LeaveRequestAdminOut]:
+    return _with_employee_and_org(db, approval_service.list_all(db))
 
 
 @router.post("/{request_id}/cancel", response_model=list[LeaveRequestOut])
@@ -141,4 +167,6 @@ def admin_override_leave_request(
         date_from=body.date_from,
         date_to=body.date_to,
         status=body.status,
+        bonus_requested=body.bonus_requested,
+        whole_submission=body.whole_submission,
     )

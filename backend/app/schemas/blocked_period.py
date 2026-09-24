@@ -24,4 +24,4 @@ class BlockedPeriodOut(BaseModel):
     org_unit_id: uuid.UUID | None
     user_id: uuid.UUID | None
     is_active: bool
-    created_by: uuid.UUID
+    created_by: uuid.UUID | None

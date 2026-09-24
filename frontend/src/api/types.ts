@@ -9,6 +9,8 @@ export interface UserOut {
 
 export interface CurrentUserOut extends UserOut {
   role: "employee" | "manager" | "hr_admin";
+  is_org_unit_head: boolean;
+  is_approver: boolean;
 }
 
 export interface OrgUnitOut {
@@ -57,6 +59,11 @@ export interface LeaveRequestWithEmployeeOut extends LeaveRequestOut {
   user_full_name: string;
 }
 
+export interface LeaveRequestAdminOut extends LeaveRequestWithEmployeeOut {
+  org_unit_id: string | null;
+  org_unit_name: string | null;
+}
+
 export interface LeaveBalanceOut {
   year: number;
   accrued_days: number;
@@ -76,7 +83,7 @@ export interface BlockedPeriodOut {
   org_unit_id: string | null;
   user_id: string | null;
   is_active: boolean;
-  created_by: string;
+  created_by: string | null;
 }
 
 export interface BlockedRangeOut {
@@ -171,12 +178,22 @@ export interface SyncRunOut {
   error_message: string | null;
 }
 
+export interface StudyPeriodsTestResultOut {
+  employee_code: string;
+  request_url: string;
+  http_status: number | null;
+  response_body_preview: string | null;
+  parsed_entries_count: number | null;
+  error: string | null;
+}
+
 export interface AuditLogOut {
   id: string;
   entity_type: string;
   entity_id: string;
   action: string;
   performed_by: string;
+  performed_by_name: string;
   reason: string;
   before_state: Record<string, unknown>;
   after_state: Record<string, unknown>;
@@ -192,6 +209,9 @@ export interface UserWithRoleOut {
   is_active: boolean;
   role: "employee" | "manager" | "hr_admin";
   employee_code: string | null;
+  hire_date: string | null;
+  termination_date: string | null;
+  is_approver: boolean;
 }
 
 export type LeaveDelegationScope = "user" | "org_unit";

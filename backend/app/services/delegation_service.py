@@ -8,7 +8,9 @@ from app.core.exceptions import ForbiddenError, NotFoundError, ValidationFailedE
 from app.models.leave_delegation import ORG_UNIT, USER, LeaveDelegation
 from app.models.org_unit import OrgUnit
 from app.models.user import User
-from app.services import org_unit_service, permissions
+from app.services import audit_service, org_unit_service, permissions
+
+ENTITY_DELEGATION = "leave_delegation"
 
 
 def _check_can_grant_for_user(db: Session, actor: User, target_user_id: uuid.UUID) -> None:
@@ -52,23 +54,28 @@ def grant(
         raise ValidationFailedError(
             "Нужно указать либо сотрудника, либо подразделение — ровно одно"
         )
-    if db.get(User, delegate_user_id) is None:
+    delegate = db.get(User, delegate_user_id)
+    if delegate is None:
         raise NotFoundError("Делегат не найден")
 
     if target_user_id is not None:
         if delegate_user_id == target_user_id:
             raise ValidationFailedError("Делегат и сотрудник не могут совпадать")
-        if db.get(User, target_user_id) is None:
+        target_user = db.get(User, target_user_id)
+        if target_user is None:
             raise NotFoundError("Сотрудник не найден")
         _check_can_grant_for_user(db, actor, target_user_id)
         scope = USER
         match_filter = LeaveDelegation.target_user_id == target_user_id
+        target_desc = f"сотрудника {target_user.full_name}"
     else:
-        if db.get(OrgUnit, target_org_unit_id) is None:
+        target_unit = db.get(OrgUnit, target_org_unit_id)
+        if target_unit is None:
             raise NotFoundError("Подразделение не найдено")
         _check_can_grant_for_unit(db, actor, target_org_unit_id)
         scope = ORG_UNIT
         match_filter = LeaveDelegation.target_org_unit_id == target_org_unit_id
+        target_desc = f"подразделения «{target_unit.name}»"
 
     existing = db.scalar(
         select(LeaveDelegation).where(
@@ -82,6 +89,16 @@ def grant(
             existing.is_active = True
             existing.revoked_at = None
             existing.revoked_by = None
+            audit_service.log(
+                db,
+                ENTITY_DELEGATION,
+                existing.id,
+                "grant",
+                actor,
+                f"Восстановлено делегирование {delegate.full_name} на {target_desc}",
+                {"is_active": False},
+                {"is_active": True},
+            )
             db.commit()
             db.refresh(existing)
         return existing
@@ -94,6 +111,17 @@ def grant(
         created_by=actor.id,
     )
     db.add(delegation)
+    db.flush()
+    audit_service.log(
+        db,
+        ENTITY_DELEGATION,
+        delegation.id,
+        "grant",
+        actor,
+        f"Делегирование {delegate.full_name} на {target_desc}",
+        {},
+        {"delegate_user_id": str(delegate_user_id), "scope": scope},
+    )
     db.commit()
     db.refresh(delegation)
     return delegation
@@ -112,9 +140,21 @@ def revoke(db: Session, actor: User, delegation_id: uuid.UUID) -> None:
             _check_can_grant_for_unit(db, actor, delegation.target_org_unit_id)
 
     if delegation.is_active:
+        delegate = db.get(User, delegation.delegate_user_id)
+        delegate_name = delegate.full_name if delegate is not None else str(delegation.delegate_user_id)
         delegation.is_active = False
         delegation.revoked_at = datetime.now(timezone.utc)
         delegation.revoked_by = actor.id
+        audit_service.log(
+            db,
+            ENTITY_DELEGATION,
+            delegation.id,
+            "revoke",
+            actor,
+            f"Отозвано делегирование {delegate_name}",
+            {"is_active": True},
+            {"is_active": False},
+        )
         db.commit()
 
 

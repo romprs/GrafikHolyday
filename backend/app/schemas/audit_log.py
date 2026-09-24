@@ -12,6 +12,7 @@ class AuditLogOut(BaseModel):
     entity_id: uuid.UUID
     action: str
     performed_by: uuid.UUID
+    performed_by_name: str
     reason: str
     before_state: dict
     after_state: dict

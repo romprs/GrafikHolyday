@@ -13,18 +13,39 @@ from app.models.leave_request import (
     STATUSES,
     LeaveRequest,
 )
+from app.models.org_unit import OrgUnit
 from app.models.user import User
 from app.services import audit_service, org_unit_service
 
 
+def _self_approval_exempt(db: Session, user: User) -> bool:
+    """Руководитель структурного подразделения не может сам себе
+    согласовать заявку — она должна уходить вышестоящему по иерархии (см.
+    _is_manager_of: каскад видимости и так пускает любого руководителя
+    выше, единственное, что нужно явно запретить — совпадение
+    согласующего с самим заявителем).
+
+    Исключение — самый верхний уровень оргструктуры (подразделение без
+    родителя: заместитель генерального директора и приравненные к нему):
+    выше просто нет руководителя, назначить некого, поэтому для них
+    старое поведение (фактическое самосогласование) сохраняется."""
+    if user.org_unit_id is None:
+        return False
+    unit = db.get(OrgUnit, user.org_unit_id)
+    return unit is not None and unit.head_user_id == user.id and unit.parent_id is None
+
+
 def _is_manager_of(db: Session, reviewer: User, target: User) -> bool:
-    """Руководитель видит и согласовывает не только свой прямой отдел, но и
-    всё, что ниже по управлению (каскад) — поэтому вышестоящий руководитель
-    может согласовать заявку сотрудника из любого нижестоящего отдела, а не
+    """Руководитель (или назначенный заместитель, см. approval_unit_ids)
+    видит и согласовывает не только свой прямой отдел, но и всё, что ниже
+    по управлению (каскад) — поэтому вышестоящий руководитель может
+    согласовать заявку сотрудника из любого нижестоящего отдела, а не
     только те, что в его собственном org_unit."""
     if target.org_unit_id is None:
         return False
-    return target.org_unit_id in set(org_unit_service.visible_unit_ids(db, reviewer) or [])
+    if reviewer.id == target.id:
+        return _self_approval_exempt(db, target)
+    return target.org_unit_id in set(org_unit_service.approval_unit_ids(db, reviewer) or [])
 
 
 def _get_requests_for_submission(
@@ -59,20 +80,23 @@ def _get_requests_for_submission(
 
 
 def list_pending_for_manager(db: Session, manager: User) -> list[LeaveRequest]:
-    managed_unit_ids = org_unit_service.visible_unit_ids(db, manager) or []
+    managed_unit_ids = org_unit_service.approval_unit_ids(db, manager) or []
     if not managed_unit_ids:
         return []
-    return list(
-        db.scalars(
-            select(LeaveRequest)
-            .join(User, User.id == LeaveRequest.user_id)
-            .where(
-                User.org_unit_id.in_(managed_unit_ids),
-                LeaveRequest.status == PENDING_APPROVAL,
-            )
-            .order_by(LeaveRequest.submitted_at)
-        ).all()
+    query = (
+        select(LeaveRequest)
+        .join(User, User.id == LeaveRequest.user_id)
+        .where(
+            User.org_unit_id.in_(managed_unit_ids),
+            LeaveRequest.status == PENDING_APPROVAL,
+        )
     )
+    if not _self_approval_exempt(db, manager):
+        # Иначе руководитель увидел бы в собственной очереди свою же
+        # заявку — а нажать «Согласовать» на ней не даст _is_manager_of
+        # (см. выше), непонятная для пользователя нерабочая кнопка.
+        query = query.where(LeaveRequest.user_id != manager.id)
+    return list(db.scalars(query.order_by(LeaveRequest.submitted_at)).all())
 
 
 def approve(
@@ -116,20 +140,20 @@ def list_approved_for_manager(db: Session, manager: User) -> list[LeaveRequest]:
     уже согласованный период (единственный, кому это доступно, кроме
     сотрудника, который больше не может отменить сам себя после согласования
     — см. leave_request_service.cancel)."""
-    managed_unit_ids = org_unit_service.visible_unit_ids(db, manager) or []
+    managed_unit_ids = org_unit_service.approval_unit_ids(db, manager) or []
     if not managed_unit_ids:
         return []
-    return list(
-        db.scalars(
-            select(LeaveRequest)
-            .join(User, User.id == LeaveRequest.user_id)
-            .where(
-                User.org_unit_id.in_(managed_unit_ids),
-                LeaveRequest.status == APPROVED,
-            )
-            .order_by(LeaveRequest.date_from)
-        ).all()
+    query = (
+        select(LeaveRequest)
+        .join(User, User.id == LeaveRequest.user_id)
+        .where(
+            User.org_unit_id.in_(managed_unit_ids),
+            LeaveRequest.status == APPROVED,
+        )
     )
+    if not _self_approval_exempt(db, manager):
+        query = query.where(LeaveRequest.user_id != manager.id)
+    return list(db.scalars(query.order_by(LeaveRequest.date_from)).all())
 
 
 def manager_cancel_approved(
@@ -163,6 +187,8 @@ def admin_override(
     date_from: date | None = None,
     date_to: date | None = None,
     status: str | None = None,
+    bonus_requested: bool | None = None,
+    whole_submission: bool = False,
 ) -> LeaveRequest:
     """Единственный способ поправить уже согласованную/отклонённую заявку —
     только HR/админ (проверяется на уровне роутера), обязательна причина,
@@ -181,6 +207,7 @@ def admin_override(
         "date_from": str(request.date_from),
         "date_to": str(request.date_to),
         "status": request.status,
+        "bonus_requested": request.bonus_requested,
     }
 
     new_date_from = date_from if date_from is not None else request.date_from
@@ -192,11 +219,14 @@ def admin_override(
     request.date_to = new_date_to
     if status is not None:
         request.status = status
+    if bonus_requested is not None:
+        request.bonus_requested = bonus_requested
 
     after_state = {
         "date_from": str(request.date_from),
         "date_to": str(request.date_to),
         "status": request.status,
+        "bonus_requested": request.bonus_requested,
     }
 
     audit_service.log(
@@ -209,6 +239,37 @@ def admin_override(
         before_state,
         after_state,
     )
+
+    # Заявка целиком (все периоды с тем же submission_id) — только для смены
+    # статуса (например, отмена): согласуется заявка одна, значит и отменять
+    # её нужно целиком. Правка дат/ЕСВ по-прежнему точечная, по одному периоду.
+    if whole_submission and status is not None and request.submission_id is not None:
+        siblings = db.scalars(
+            select(LeaveRequest).where(
+                LeaveRequest.submission_id == request.submission_id,
+                LeaveRequest.id != request.id,
+                LeaveRequest.status != status,
+            )
+        ).all()
+        for sibling in siblings:
+            sibling_before = {
+                "date_from": str(sibling.date_from),
+                "date_to": str(sibling.date_to),
+                "status": sibling.status,
+                "bonus_requested": sibling.bonus_requested,
+            }
+            sibling.status = status
+            audit_service.log(
+                db,
+                "leave_request",
+                sibling.id,
+                "admin_override_edit",
+                actor,
+                reason,
+                sibling_before,
+                {**sibling_before, "status": status},
+            )
+
     db.commit()
     db.refresh(request)
     return request

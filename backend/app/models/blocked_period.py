@@ -62,8 +62,10 @@ class BlockedPeriod(UUIDPKMixin, Base):
     # периодов, заведённых вручную через админку.
     external_source: Mapped[str | None] = mapped_column(String, nullable=True)
     external_ref: Mapped[str | None] = mapped_column(String, nullable=True)
-    created_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    # NULL — период заведён автоматической синхронизацией по расписанию
+    # (см. app/scheduler.py), у которой нет пользователя-инициатора.
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

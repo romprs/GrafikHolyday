@@ -11,7 +11,9 @@ const keyLabelRu: Record<string, string> = {
   leave_balance_limit: "Запрет заявок сверх остатка баланса",
   own_overlap_check: "Запрет пересекающихся заявок сотрудника",
   planning_year: "Плановый год",
-  vacation_bonus: "Доплата к отпуску",
+  vacation_bonus: "Выплата ЕСВ к отпуску",
+  vacation_bonus_new_hire_restriction: "Выплата ЕСВ по стажу — новичкам (стаж < года)",
+  vacation_bonus_veteran_restriction: "Выплата ЕСВ по стажу — стажистам (стаж ≥ года)",
 };
 
 function SettingRow({ setting }: { setting: RestrictionSettingsOut }) {
@@ -36,6 +38,10 @@ function SettingRow({ setting }: { setting: RestrictionSettingsOut }) {
   }
 
   const isPlanningYear = setting.key === "planning_year";
+  // Без этого признака кнопка «Сохранить» выглядит одинаково всегда, и
+  // после смены параметра не бросается в глаза, что её ещё нужно нажать.
+  const dirty =
+    enabled !== setting.enabled || JSON.stringify(params) !== JSON.stringify(setting.params);
 
   return (
     <tr>
@@ -87,6 +93,45 @@ function SettingRow({ setting }: { setting: RestrictionSettingsOut }) {
             />
           </label>
         )}
+        {setting.key === "vacation_bonus_new_hire_restriction" && (
+          <>
+            <label>
+              мес. со дня приёма:{" "}
+              <input
+                type="number"
+                min={1}
+                style={{ width: 60 }}
+                value={(params.months as number) ?? 10}
+                onChange={(e) => setParams({ ...params, months: Number(e.target.value) })}
+              />
+            </label>
+            <div className="hint" style={{ maxWidth: 340 }}>
+              Для сотрудников со стажем менее года — ЕСВ доступна не раньше этого срока с даты
+              приёма (User.hire_date). Без даты приёма ограничение не действует.
+            </div>
+          </>
+        )}
+        {setting.key === "vacation_bonus_veteran_restriction" && (
+          <>
+            <label>
+              сдвиг, мес.:{" "}
+              <input
+                type="number"
+                min={1}
+                max={11}
+                style={{ width: 60 }}
+                value={(params.shift_months as number) ?? 6}
+                onChange={(e) => setParams({ ...params, shift_months: Number(e.target.value) })}
+              />
+            </label>
+            <div className="hint" style={{ maxWidth: 340 }}>
+              Для сотрудников со стажем год и более — принятым в 1-й половине планового года
+              ограничений нет; принятым во 2-й — доступно с (месяц приёма − сдвиг) того же
+              планового года, ежегодно (например, приём в декабре при сдвиге 6 → доступно с июня
+              каждого планового года). Без даты приёма ограничение не действует.
+            </div>
+          </>
+        )}
         {setting.key === "department_load_thresholds" && (
           <>
             <label>
@@ -117,8 +162,12 @@ function SettingRow({ setting }: { setting: RestrictionSettingsOut }) {
         )}
       </td>
       <td>
-        <button onClick={handleSave} disabled={saving}>
-          Сохранить
+        <button
+          className={dirty ? "btn-primary" : "btn-ghost"}
+          onClick={handleSave}
+          disabled={saving || !dirty}
+        >
+          {dirty ? "Сохранить*" : "Сохранено"}
         </button>
       </td>
     </tr>
@@ -134,23 +183,36 @@ export function RestrictionSettingsPage() {
   return (
     <div>
       <h3>Управляемые ограничения</h3>
-      <table style={{ borderCollapse: "collapse" }}>
+      <div className="panel">
+      <table className="t">
         <thead>
           <tr>
-            <th style={{ textAlign: "left" }}>Ограничение</th>
+            <th>Ограничение</th>
             <th>Вкл.</th>
-            <th style={{ textAlign: "left" }}>Параметры</th>
+            <th>Параметры</th>
             <th />
           </tr>
         </thead>
         <tbody>
           {settings
-            ?.filter((s) => s.key !== "external_source_connection" && s.key !== "auth_configuration")
+            // У этих ключей своя полноценная форма на вкладке «Интеграции» —
+            // здесь для них не было ни строкового наименования (ключ
+            // показывался как есть, по-английски), ни редактируемых
+            // параметров, только чекбокс "вкл", дублирующий и путающий с
+            // формой на другой вкладке.
+            ?.filter(
+              (s) =>
+                s.key !== "external_source_connection" &&
+                s.key !== "auth_configuration" &&
+                s.key !== "study_periods_source" &&
+                s.key !== "vacation_days_source",
+            )
             .map((s) => (
               <SettingRow key={s.key} setting={s} />
             ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

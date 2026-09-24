@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   createOrgUnit,
   createUser,
@@ -20,21 +20,21 @@ import { useAuth } from "../auth/AuthContext";
 import type { EmployeeRole, OrgUnitEmployeeOut, OrgUnitOut } from "../api/types";
 import { roleLabel } from "./DevLoginPage";
 
-const ADMIN_COLS = 9;
+const ADMIN_COLS = 11;
 const READONLY_COLS = 3;
 
 const th: React.CSSProperties = {
   textAlign: "left",
   padding: "6px 8px",
-  borderBottom: "2px solid #ccc",
+  borderBottom: "2px solid var(--line)",
   fontSize: "0.8em",
-  color: "#555",
+  color: "var(--ink-mute)",
   fontWeight: 600,
   whiteSpace: "nowrap",
 };
 const td: React.CSSProperties = {
   padding: "4px 8px",
-  borderBottom: "1px solid #eee",
+  borderBottom: "1px solid var(--hairline)",
   verticalAlign: "middle",
 };
 const actionsCell: React.CSSProperties = {
@@ -52,8 +52,6 @@ const actionBtn: React.CSSProperties = {
   padding: "2px 6px",
   whiteSpace: "nowrap",
 };
-const numInput: React.CSSProperties = { width: 52 };
-
 // Единая форма отображения сотрудника — независимо от того, откуда данные
 // пришли: полный набор полей от /admin/users (только hr_admin) или
 // облегчённый /org-units/employees (доступен и руководителю, read-only).
@@ -66,6 +64,9 @@ interface DisplayEmployee {
   has_benefits?: boolean;
   is_active?: boolean;
   employee_code?: string | null;
+  hire_date?: string | null;
+  termination_date?: string | null;
+  is_approver?: boolean;
 }
 
 interface TreeNode {
@@ -117,6 +118,14 @@ function matchesFilters(
   if (roleFilter && e.role !== roleFilter) return false;
   if (unitFilterIds && (!e.org_unit_id || !unitFilterIds.has(e.org_unit_id))) return false;
   return true;
+}
+
+// Дата приёма/увольнения приходит как ISO ("2027-09-01") из бэкенда —
+// показываем в привычном для HR формате "ДД.ММ.ГГГГ".
+function formatDateRu(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-");
+  return `${d}.${m}.${y}`;
 }
 
 // Руководитель подразделения — всегда первой строкой, остальные по алфавиту.
@@ -221,13 +230,13 @@ function OrgUnitForm({
           активно
         </label>
       )}
-      <button type="submit" disabled={saving}>
+      <button type="submit" className="btn-primary" disabled={saving}>
         Сохранить
       </button>
-      <button type="button" onClick={onCancel} disabled={saving}>
+      <button type="button" className="btn-ghost" onClick={onCancel} disabled={saving}>
         Отмена
       </button>
-      {error && <span style={{ color: "crimson" }}>{error}</span>}
+      {error && <span className="error-text">{error}</span>}
     </form>
   );
 }
@@ -236,21 +245,40 @@ function EmployeeForm({
   orgUnits,
   initial,
   defaultOrgUnitId,
+  year,
   onSaved,
   onCancel,
 }: {
   orgUnits: OrgUnitOut[];
   initial: DisplayEmployee | null;
   defaultOrgUnitId: string | null;
+  year?: number;
   onSaved: () => void;
   onCancel: () => void;
 }) {
+  const queryClient = useQueryClient();
+  const { data: balance } = useQuery({
+    queryKey: ["user-balance", initial?.id, year],
+    queryFn: () => getUserBalance(initial!.id, year!),
+    enabled: !!initial && year !== undefined,
+  });
+  const [accrued, setAccrued] = useState("");
+  const [carriedOver, setCarriedOver] = useState("");
+  useEffect(() => {
+    if (balance) {
+      setAccrued(String(balance.accrued_days));
+      setCarriedOver(String(balance.carried_over_days));
+    }
+  }, [balance]);
   const [email, setEmail] = useState(initial?.email ?? "");
   const [fullName, setFullName] = useState(initial?.full_name ?? "");
   const [orgUnitId, setOrgUnitId] = useState(initial?.org_unit_id ?? defaultOrgUnitId ?? "");
   const [hasBenefits, setHasBenefits] = useState(initial?.has_benefits ?? false);
   const [isActive, setIsActive] = useState(initial?.is_active ?? true);
   const [employeeCode, setEmployeeCodeValue] = useState(initial?.employee_code ?? "");
+  const [hireDate, setHireDate] = useState(initial?.hire_date ?? "");
+  const [terminationDate, setTerminationDate] = useState(initial?.termination_date ?? "");
+  const [isApprover, setIsApprover] = useState(initial?.is_approver ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -266,9 +294,20 @@ function EmployeeForm({
           org_unit_id: orgUnitId || null,
           has_benefits: hasBenefits,
           is_active: isActive,
+          hire_date: hireDate || null,
+          termination_date: terminationDate || null,
+          is_approver: isApprover,
         });
         if (employeeCode.trim() !== (initial.employee_code ?? "")) {
           await setEmployeeCode(initial.id, employeeCode.trim() || null);
+        }
+        if (year !== undefined && balance && accrued !== "" && carriedOver !== "") {
+          const a = Number(accrued);
+          const c = Number(carriedOver);
+          if (a !== balance.accrued_days || c !== balance.carried_over_days) {
+            await setUserBalance(initial.id, { year, accrued_days: a, carried_over_days: c });
+            queryClient.invalidateQueries({ queryKey: ["user-balance", initial.id, year] });
+          }
         }
       } else {
         await createUser({
@@ -326,56 +365,85 @@ function EmployeeForm({
         льготы
       </label>
       {initial && (
-        <label>
-          <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />{" "}
-          активен
-        </label>
+        <>
+          <label style={{ fontSize: "0.85em", color: "var(--ink-mute)" }}>
+            приём{" "}
+            <input
+              type="date"
+              value={hireDate ?? ""}
+              onChange={(e) => setHireDate(e.target.value)}
+              style={{ width: 140 }}
+            />
+          </label>
+          <label style={{ fontSize: "0.85em", color: "var(--ink-mute)" }}>
+            увольнение{" "}
+            <input
+              type="date"
+              value={terminationDate ?? ""}
+              onChange={(e) => setTerminationDate(e.target.value)}
+              style={{ width: 140 }}
+            />
+          </label>
+          <label style={{ fontSize: "0.85em", color: "var(--ink-mute)" }}>
+            дней начислено ({year}){" "}
+            <input
+              type="number"
+              min={0}
+              step="0.5"
+              className="num-input"
+              value={accrued}
+              onChange={(e) => setAccrued(e.target.value)}
+              style={{ width: 70 }}
+            />
+          </label>
+          <label style={{ fontSize: "0.85em", color: "var(--ink-mute)" }}>
+            перенесено{" "}
+            <input
+              type="number"
+              min={0}
+              step="0.5"
+              className="num-input"
+              value={carriedOver}
+              onChange={(e) => setCarriedOver(e.target.value)}
+              style={{ width: 70 }}
+            />
+          </label>
+          <label>
+            <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />{" "}
+            активен
+          </label>
+          <label style={{ fontSize: "0.85em" }} title="Позволяет согласовывать заявки своего подразделения, даже если сотрудник формально не руководитель — например, заместителю на время отсутствия начальника.">
+            <input type="checkbox" checked={isApprover} onChange={(e) => setIsApprover(e.target.checked)} />{" "}
+            может согласовывать
+            {initial?.role === "manager" && (
+              <span className="hint"> (руководителю право и так доступно)</span>
+            )}
+          </label>
+        </>
       )}
-      <button type="submit" disabled={saving}>
+      <button type="submit" className="btn-primary" disabled={saving}>
         Сохранить
       </button>
-      <button type="button" onClick={onCancel} disabled={saving}>
+      <button type="button" className="btn-ghost" onClick={onCancel} disabled={saving}>
         Отмена
       </button>
-      {error && <span style={{ color: "crimson" }}>{error}</span>}
+      {error && <span className="error-text">{error}</span>}
     </form>
   );
 }
 
+// Только показ — ручное редактирование убрано (не работало надёжно через
+// эту плотную таблицу и путало с формой «изменить»; начисление баланса —
+// через синхронизацию с источником дней отпуска, см. app/sync).
 function useBalanceEditor(userId: string, year: number) {
-  const queryClient = useQueryClient();
   const { data: balance } = useQuery({
     queryKey: ["user-balance", userId, year],
     queryFn: () => getUserBalance(userId, year),
   });
-  const [accrued, setAccrued] = useState<string>("");
-  const [carriedOver, setCarriedOver] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
-
-  const accruedValue = accrued === "" ? balance?.accrued_days ?? 0 : Number(accrued);
-  const carriedOverValue = carriedOver === "" ? balance?.carried_over_days ?? 0 : Number(carriedOver);
-
-  async function handleSave() {
-    setError(null);
-    try {
-      await setUserBalance(userId, { year, accrued_days: accruedValue, carried_over_days: carriedOverValue });
-      queryClient.invalidateQueries({ queryKey: ["user-balance", userId, year] });
-      setAccrued("");
-      setCarriedOver("");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Не удалось сохранить");
-    }
-  }
 
   return {
     balance,
-    accrued: accrued === "" ? String(balance?.accrued_days ?? "") : accrued,
-    setAccrued,
-    carriedOver: carriedOver === "" ? String(balance?.carried_over_days ?? "") : carriedOver,
-    setCarriedOver,
     remaining: balance?.remaining_days,
-    handleSave,
-    error,
   };
 }
 
@@ -425,11 +493,12 @@ function EmployeeRowAdmin({
   if (editing) {
     return (
       <tr>
-        <td colSpan={ADMIN_COLS} style={{ ...td, background: "#f7f7f7" }}>
+        <td colSpan={ADMIN_COLS} style={{ ...td, background: "var(--tint)" }}>
           <EmployeeForm
             orgUnits={orgUnits}
             initial={employee}
             defaultOrgUnitId={employee.org_unit_id}
+            year={year}
             onSaved={() => {
               setEditing(null);
               onSaved();
@@ -441,7 +510,7 @@ function EmployeeRowAdmin({
     );
   }
 
-  const nameColor = employee.role === "employee" ? "inherit" : "#2e7d32";
+  const nameColor = employee.role === "employee" ? "inherit" : "var(--accent-ink)";
 
   return (
     <tr style={{ opacity: employee.is_active === false ? 0.5 : 1 }}>
@@ -455,36 +524,19 @@ function EmployeeRowAdmin({
       <td style={{ ...td, textAlign: "center" }} title={employee.has_benefits ? "Льготник" : ""}>
         {employee.has_benefits ? "✓" : "—"}
       </td>
-      <td style={td}>
-        <input
-          type="number"
-          min={0}
-          style={numInput}
-          value={balanceEditor.accrued}
-          onChange={(e) => balanceEditor.setAccrued(e.target.value)}
-        />
-      </td>
-      <td style={td}>
-        <input
-          type="number"
-          min={0}
-          style={numInput}
-          value={balanceEditor.carriedOver}
-          onChange={(e) => balanceEditor.setCarriedOver(e.target.value)}
-        />
-      </td>
+      <td style={td}>{formatDateRu(employee.hire_date)}</td>
+      <td style={td}>{formatDateRu(employee.termination_date)}</td>
+      <td style={{ ...td, textAlign: "center" }}>{balanceEditor.balance?.accrued_days ?? "—"}</td>
+      <td style={{ ...td, textAlign: "center" }}>{balanceEditor.balance?.carried_over_days ?? "—"}</td>
       <td style={{ ...td, fontWeight: 600 }}>{balanceEditor.remaining ?? "—"}</td>
       <td style={actionsCell}>
         <div style={actionsWrap}>
-          <button type="button" style={actionBtn} onClick={balanceEditor.handleSave} title="Сохранить баланс">
-            баланс
-          </button>
-          <button type="button" style={actionBtn} onClick={() => setEditing(employee.id)}>
+          <button type="button" className="btn-ghost" style={actionBtn} onClick={() => setEditing(employee.id)}>
             изменить
           </button>
           <button
             type="button"
-            style={actionBtn}
+            className="btn-ghost" style={actionBtn}
             onClick={handleRoleToggle}
             disabled={employee.id === currentUserId}
             title={employee.role === "hr_admin" ? "Забрать роль HR-admin" : "Выдать роль HR-admin"}
@@ -492,21 +544,18 @@ function EmployeeRowAdmin({
             {employee.role === "hr_admin" ? "−HR" : "+HR"}
           </button>
           {employee.is_active !== false && (
-            <button type="button" style={actionBtn} onClick={handleDeactivate}>
+            <button type="button" className="btn-ghost" style={actionBtn} onClick={handleDeactivate}>
               деактивировать
             </button>
           )}
         </div>
-        {balanceEditor.error && (
-          <div style={{ color: "crimson", fontSize: "0.75em", textAlign: "right" }}>{balanceEditor.error}</div>
-        )}
       </td>
     </tr>
   );
 }
 
 function EmployeeRowReadOnly({ employee }: { employee: DisplayEmployee }) {
-  const nameColor = employee.role === "employee" ? "inherit" : "#2e7d32";
+  const nameColor = employee.role === "employee" ? "inherit" : "var(--accent-ink)";
   return (
     <tr>
       <td style={{ ...td, paddingLeft: 34, color: nameColor }}>{employee.full_name}</td>
@@ -603,7 +652,7 @@ function OrgUnitRow({
 
   return (
     <>
-      <tr style={{ background: "#f2f5fa", opacity: node.unit.is_active ? 1 : 0.55 }}>
+      <tr style={{ background: "var(--tint)", opacity: node.unit.is_active ? 1 : 0.55 }}>
         <td
           style={{ ...td, paddingLeft: 8 + depth * 18, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
           colSpan={isHrAdmin ? ADMIN_COLS - 1 : READONLY_COLS}
@@ -617,22 +666,22 @@ function OrgUnitRow({
             {isOpen ? "▾" : "▸"}
           </button>{" "}
           {node.unit.name}
-          {node.unit.unit_kind && <span style={{ fontWeight: 400, color: "#888" }}> ({node.unit.unit_kind})</span>}
-          <span style={{ fontWeight: 400, color: "#aaa" }}> [{employeesHere.length}]</span>
-          {!node.unit.is_active && <span style={{ fontWeight: 600, color: "#b33" }}> — неактивно</span>}
+          {node.unit.unit_kind && <span style={{ fontWeight: 400, color: "var(--ink-mute)" }}> ({node.unit.unit_kind})</span>}
+          <span style={{ fontWeight: 400, color: "var(--ink-mute)" }}> [{employeesHere.length}]</span>
+          {!node.unit.is_active && <span style={{ fontWeight: 600, color: "var(--danger)" }}> — неактивно</span>}
         </td>
         {isHrAdmin && (
           <>
             <td style={actionsCell}>
               <div style={actionsWrap}>
-                <button type="button" style={actionBtn} onClick={() => setUnitEditState({ mode: "edit", unit: node.unit })}>
+                <button type="button" className="btn-ghost" style={actionBtn} onClick={() => setUnitEditState({ mode: "edit", unit: node.unit })}>
                   изменить
                 </button>
                 {node.unit.is_active ? (
                   <>
                     <button
                       type="button"
-                      style={actionBtn}
+                      className="btn-ghost" style={actionBtn}
                       onClick={() => setUnitEditState({ mode: "create", parentId: node.unit.id })}
                       title="Добавить подраздел"
                     >
@@ -640,18 +689,18 @@ function OrgUnitRow({
                     </button>
                     <button
                       type="button"
-                      style={actionBtn}
+                      className="btn-ghost" style={actionBtn}
                       onClick={() => setCreatingEmployeeUnitId(node.unit.id)}
                       title="Добавить сотрудника"
                     >
                       + раб.
                     </button>
-                    <button type="button" style={actionBtn} onClick={handleDeleteUnit}>
+                    <button type="button" className="btn-ghost" style={actionBtn} onClick={handleDeleteUnit}>
                       деакт.
                     </button>
                   </>
                 ) : (
-                  <button type="button" style={actionBtn} onClick={handleReactivateUnit}>
+                  <button type="button" className="btn-ghost" style={actionBtn} onClick={handleReactivateUnit}>
                     актив.
                   </button>
                 )}
@@ -663,7 +712,7 @@ function OrgUnitRow({
 
       {isOpen && isEditingThis && (
         <tr>
-          <td colSpan={cols} style={{ ...td, background: "#eef2ff" }}>
+          <td colSpan={cols} style={{ ...td, background: "var(--tint-strong)" }}>
             <OrgUnitForm
               orgUnits={orgUnits}
               employees={allEmployees}
@@ -679,7 +728,7 @@ function OrgUnitRow({
       )}
       {isOpen && isAddingChildHere && (
         <tr>
-          <td colSpan={cols} style={{ ...td, background: "#eef2ff" }}>
+          <td colSpan={cols} style={{ ...td, background: "var(--tint-strong)" }}>
             <OrgUnitForm
               orgUnits={orgUnits}
               employees={allEmployees}
@@ -695,7 +744,7 @@ function OrgUnitRow({
       )}
       {isOpen && isAddingEmployeeHere && (
         <tr>
-          <td colSpan={cols} style={{ ...td, background: "#f7f7f7" }}>
+          <td colSpan={cols} style={{ ...td, background: "var(--tint)" }}>
             <EmployeeForm
               orgUnits={orgUnits}
               initial={null}
@@ -904,24 +953,13 @@ export function OrgDirectoryPage() {
   return (
     <div>
       <h3>Оргструктура и сотрудники</h3>
-      <p style={{ color: "#888", fontSize: "0.9em" }}>
+      <p className="hint">
         Подразделения и сотрудники синхронизируются из внешней системы (вкладка «Синхронизация») —
         здесь можно скорректировать вручную: сопоставление с подразделением, льготы, табельный
         номер, роль HR-admin. Руководитель подразделения всегда показан первым в списке.
       </p>
 
-      <div
-        style={{
-          display: "flex",
-          gap: 10,
-          flexWrap: "wrap",
-          alignItems: "center",
-          margin: "10px 0",
-          padding: 8,
-          background: "#fafafa",
-          borderRadius: 4,
-        }}
-      >
+      <div className="toolbar">
         <input
           type="text"
           placeholder="Поиск по ФИО"
@@ -944,26 +982,26 @@ export function OrgDirectoryPage() {
             </option>
           ))}
         </select>
-        <button type="button" onClick={expandAll}>
+        <button type="button" className="btn-outline" onClick={expandAll}>
           Развернуть всё
         </button>
-        <button type="button" onClick={collapseAll}>
+        <button type="button" className="btn-outline" onClick={collapseAll}>
           Свернуть всё
         </button>
       </div>
 
       {isHrAdmin && (
         <div style={{ marginBottom: 8, display: "flex", gap: 8 }}>
-          <button type="button" onClick={() => setUnitEditState({ mode: "create", parentId: null })}>
+          <button type="button" className="btn-primary" onClick={() => setUnitEditState({ mode: "create", parentId: null })}>
             + подразделение
           </button>
-          <button type="button" onClick={() => setCreatingEmployeeUnitId(null)}>
+          <button type="button" className="btn-outline" onClick={() => setCreatingEmployeeUnitId(null)}>
             + сотрудник без подразделения
           </button>
         </div>
       )}
       {isHrAdmin && unitEditState?.mode === "create" && unitEditState.parentId === null && (
-        <div style={{ margin: "6px 0", padding: 8, background: "#eef2ff", borderRadius: 4 }}>
+        <div className="panel" style={{ padding: 12 }}>
           <OrgUnitForm
             orgUnits={orgUnits ?? []}
             employees={employees}
@@ -974,7 +1012,7 @@ export function OrgDirectoryPage() {
         </div>
       )}
       {isHrAdmin && creatingEmployeeUnitId === null && (
-        <div style={{ margin: "6px 0", padding: 8, background: "#f7f7f7", borderRadius: 4 }}>
+        <div className="panel" style={{ padding: 12 }}>
           <EmployeeForm
             orgUnits={orgUnits ?? []}
             initial={null}
@@ -985,20 +1023,22 @@ export function OrgDirectoryPage() {
         </div>
       )}
 
-      <div style={{ overflowX: "auto" }}>
+      <div className="panel" style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
           <colgroup>
             {isHrAdmin ? (
               <>
-                <col style={{ width: "22%" }} />
-                <col style={{ width: "16%" }} />
-                <col style={{ width: "9%" }} />
+                <col style={{ width: "18%" }} />
+                <col style={{ width: "13%" }} />
                 <col style={{ width: "7%" }} />
                 <col style={{ width: "6%" }} />
-                <col style={{ width: "6%" }} />
-                <col style={{ width: "6%" }} />
                 <col style={{ width: "5%" }} />
-                <col style={{ width: "23%" }} />
+                <col style={{ width: "7%" }} />
+                <col style={{ width: "7%" }} />
+                <col style={{ width: "5%" }} />
+                <col style={{ width: "5%" }} />
+                <col style={{ width: "5%" }} />
+                <col style={{ width: "22%" }} />
               </>
             ) : (
               <>
@@ -1017,6 +1057,8 @@ export function OrgDirectoryPage() {
                 <>
                   <th style={th}>Таб. №</th>
                   <th style={{ ...th, textAlign: "center" }}>Льготы</th>
+                  <th style={th}>Приём</th>
+                  <th style={th}>Увольнение</th>
                   <th style={th}>Начислено</th>
                   <th style={th}>Перенесено</th>
                   <th style={th}>Остаток</th>
@@ -1054,17 +1096,17 @@ export function OrgDirectoryPage() {
 
             {showUnassigned && (
               <>
-                <tr style={{ background: "#f2f5fa" }}>
+                <tr style={{ background: "var(--tint)" }}>
                   <td style={{ ...td, fontWeight: 600 }} colSpan={cols}>
                     <button
                       type="button"
                       onClick={() => toggleExpanded(UNASSIGNED_ID)}
-                      style={{ border: "none", background: "none", cursor: "pointer", width: 16, fontWeight: 700, padding: 0 }}
+                      style={{ border: "none", background: "none", cursor: "pointer", width: 16, fontWeight: 700, padding: 0, color: "inherit" }}
                       title={unassignedOpen ? "Свернуть" : "Развернуть"}
                     >
                       {unassignedOpen ? "▾" : "▸"}
                     </button>{" "}
-                    Без подразделения <span style={{ fontWeight: 400, color: "#aaa" }}>[{unassignedVisible.length}]</span>
+                    Без подразделения <span style={{ fontWeight: 400, color: "var(--ink-mute)" }}>[{unassignedVisible.length}]</span>
                   </td>
                 </tr>
                 {unassignedOpen &&

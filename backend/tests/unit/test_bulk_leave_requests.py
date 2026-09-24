@@ -34,7 +34,7 @@ def setup(db_session):
 def test_adds_multiple_non_overlapping_drafts(db_session, setup):
     # Баланс 20: 7 + 13 = 20 — остаток после каждого добавления либо >= 7, либо 0.
     leave_request_service.create_draft(
-        db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 7), None
+        db_session, setup["user"], date(2026, 7, 1), date(2026, 7, 7), None
     )
     leave_request_service.create_draft(
         db_session, setup["user"], date(2026, 9, 1), date(2026, 9, 13), None
@@ -45,18 +45,18 @@ def test_adds_multiple_non_overlapping_drafts(db_session, setup):
 
 def test_rejects_periods_overlapping_each_other(db_session, setup):
     leave_request_service.create_draft(
-        db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 10), None
+        db_session, setup["user"], date(2026, 7, 1), date(2026, 7, 10), None
     )
     with pytest.raises(ValidationFailedError):
         leave_request_service.create_draft(
-            db_session, setup["user"], date(2026, 6, 8), date(2026, 6, 15), None
+            db_session, setup["user"], date(2026, 7, 8), date(2026, 7, 15), None
         )
 
 
 def test_rejects_draft_exceeding_remaining_balance(db_session, setup):
     # Баланс 20: первый черновик выбирает весь остаток (остаток 0), второй уже не помещается.
     leave_request_service.create_draft(
-        db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 20), None
+        db_session, setup["user"], date(2026, 7, 1), date(2026, 7, 20), None
     )
     with pytest.raises(ValidationFailedError):
         leave_request_service.create_draft(
@@ -66,11 +66,11 @@ def test_rejects_draft_exceeding_remaining_balance(db_session, setup):
 
 def test_failed_draft_does_not_affect_existing_drafts(db_session, setup):
     leave_request_service.create_draft(
-        db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 7), None
+        db_session, setup["user"], date(2026, 7, 1), date(2026, 7, 7), None
     )
     with pytest.raises(ValidationFailedError):
         leave_request_service.create_draft(
-            db_session, setup["user"], date(2026, 6, 3), date(2026, 6, 9), None
+            db_session, setup["user"], date(2026, 7, 3), date(2026, 7, 9), None
         )
     drafts = leave_request_service.list_drafts(db_session, setup["user"], 2026)
     assert len(drafts) == 1
@@ -79,14 +79,14 @@ def test_failed_draft_does_not_affect_existing_drafts(db_session, setup):
 def test_rejects_short_draft(db_session, setup):
     with pytest.raises(ValidationFailedError):
         leave_request_service.create_draft(
-            db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 3), None
+            db_session, setup["user"], date(2026, 7, 1), date(2026, 7, 3), None
         )
 
 
 def test_submit_rejects_partial_selection(db_session, setup):
     # Баланс 20, выбрано только 7 — отправлять нельзя, пока не выбран весь остаток.
     leave_request_service.create_draft(
-        db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 7), None
+        db_session, setup["user"], date(2026, 7, 1), date(2026, 7, 7), None
     )
     with pytest.raises(ValidationFailedError):
         leave_request_service.submit_drafts(db_session, setup["user"], 2026)
@@ -94,7 +94,7 @@ def test_submit_rejects_partial_selection(db_session, setup):
 
 def test_submit_succeeds_on_exact_balance_match(db_session, setup):
     leave_request_service.create_draft(
-        db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 13), None
+        db_session, setup["user"], date(2026, 7, 1), date(2026, 7, 13), None
     )
     leave_request_service.create_draft(
         db_session, setup["user"], date(2026, 9, 1), date(2026, 9, 7), None
@@ -109,7 +109,7 @@ def test_submit_assigns_shared_submission_id(db_session, setup):
     # Все периоды одной отправки должны нести один submission_id, чтобы
     # руководитель мог согласовать/отклонить их одним действием.
     leave_request_service.create_draft(
-        db_session, setup["user"], date(2026, 6, 1), date(2026, 6, 13), None
+        db_session, setup["user"], date(2026, 7, 1), date(2026, 7, 13), None
     )
     leave_request_service.create_draft(
         db_session, setup["user"], date(2026, 9, 1), date(2026, 9, 7), None

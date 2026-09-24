@@ -2,9 +2,11 @@ import { apiFetch } from "./client";
 import type {
   AuditLogOut,
   LeaveBalanceOut,
+  LeaveRequestAdminOut,
   LeaveRequestOut,
   OrgUnitOut,
   RestrictionSettingsOut,
+  StudyPeriodsTestResultOut,
   SyncRunOut,
   UserWithRoleOut,
 } from "./types";
@@ -19,13 +21,20 @@ export function updateRestrictionSetting(
   });
 }
 
-export function listAllLeaveRequests(): Promise<LeaveRequestOut[]> {
-  return apiFetch<LeaveRequestOut[]>("/leave-requests/all");
+export function listAllLeaveRequests(): Promise<LeaveRequestAdminOut[]> {
+  return apiFetch<LeaveRequestAdminOut[]>("/leave-requests/all");
 }
 
 export function adminOverrideLeaveRequest(
   id: string,
-  input: { reason: string; date_from?: string; date_to?: string; status?: string },
+  input: {
+    reason: string;
+    date_from?: string;
+    date_to?: string;
+    status?: string;
+    bonus_requested?: boolean;
+    whole_submission?: boolean;
+  },
 ): Promise<LeaveRequestOut> {
   return apiFetch<LeaveRequestOut>(`/leave-requests/${id}/admin-override`, {
     method: "PATCH",
@@ -35,6 +44,14 @@ export function adminOverrideLeaveRequest(
 
 export function listAuditLog(): Promise<AuditLogOut[]> {
   return apiFetch<AuditLogOut[]>("/admin/audit-log");
+}
+
+export function clearAuditLog(range: { date_from?: string; date_to?: string }): Promise<void> {
+  const params = new URLSearchParams();
+  if (range.date_from) params.set("date_from", range.date_from);
+  if (range.date_to) params.set("date_to", range.date_to);
+  const query = params.toString();
+  return apiFetch<void>(`/admin/audit-log${query ? `?${query}` : ""}`, { method: "DELETE" });
 }
 
 export function listUsersWithRoles(): Promise<UserWithRoleOut[]> {
@@ -75,12 +92,33 @@ export function listStudyPeriodsRuns(): Promise<SyncRunOut[]> {
   return apiFetch<SyncRunOut[]>("/admin/study-periods/runs");
 }
 
+export function clearStudyPeriodsRuns(): Promise<void> {
+  return apiFetch<void>("/admin/study-periods/runs", { method: "DELETE" });
+}
+
+export function testStudyPeriodsConnection(input: {
+  base_url: string;
+  auth_login: string;
+  auth_password: string;
+  verify_tls: boolean;
+  employee_codes: string[];
+}): Promise<StudyPeriodsTestResultOut[]> {
+  return apiFetch<StudyPeriodsTestResultOut[]>("/admin/study-periods/test", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export function triggerVacationDaysSync(): Promise<SyncRunOut> {
   return apiFetch<SyncRunOut>("/admin/vacation-days/run", { method: "POST" });
 }
 
 export function listVacationDaysRuns(): Promise<SyncRunOut[]> {
   return apiFetch<SyncRunOut[]>("/admin/vacation-days/runs");
+}
+
+export function clearVacationDaysRuns(): Promise<void> {
+  return apiFetch<void>("/admin/vacation-days/runs", { method: "DELETE" });
 }
 
 export function createOrgUnit(input: {
@@ -127,6 +165,9 @@ export function updateUser(
     org_unit_id?: string | null;
     has_benefits: boolean;
     is_active: boolean;
+    hire_date?: string | null;
+    termination_date?: string | null;
+    is_approver?: boolean;
   },
 ): Promise<UserWithRoleOut> {
   return apiFetch<UserWithRoleOut>(`/admin/users/${id}`, { method: "PATCH", body: JSON.stringify(input) });
